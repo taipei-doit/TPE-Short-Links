@@ -29,11 +29,11 @@ export function BlockedWordsPage() {
       if (data.length === 0) {
         notifications.show({
           color: 'yellow',
-          message: 'No blocked words found. Check if blocked_words.txt exists and has content.',
+          message: '尚無封鎖字詞，請確認 blocked_words.txt 是否存在且有內容。',
         });
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Load failed';
+      const msg = e instanceof Error ? e.message : '載入失敗';
       notifications.show({ color: 'red', message: msg });
       console.error('Error loading blocked words:', e);
     } finally {
@@ -48,17 +48,17 @@ export function BlockedWordsPage() {
   async function handleAdd() {
     const trimmed = newWord.trim().toLowerCase();
     if (!trimmed || trimmed.length > 4) {
-      notifications.show({ color: 'red', message: 'Word must be 1-4 characters' });
+      notifications.show({ color: 'red', message: '字詞長度須為 1–4 個字元' });
       return;
     }
 
     try {
       await api.addBlockedWord(trimmed);
       setNewWord('');
-      notifications.show({ color: 'green', message: 'Word added' });
+      notifications.show({ color: 'green', message: '字詞已新增' });
       load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Add failed';
+      const msg = e instanceof Error ? e.message : '新增失敗';
       notifications.show({ color: 'red', message: msg });
     }
   }
@@ -66,10 +66,10 @@ export function BlockedWordsPage() {
   async function handleDelete(word: string) {
     try {
       await api.deleteBlockedWord(word);
-      notifications.show({ color: 'green', message: 'Word removed' });
+      notifications.show({ color: 'green', message: '字詞已移除' });
       load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Delete failed';
+      const msg = e instanceof Error ? e.message : '刪除失敗';
       notifications.show({ color: 'red', message: msg });
     }
   }
@@ -78,14 +78,14 @@ export function BlockedWordsPage() {
     <Stack gap="xl">
       <div>
         <Title order={1} style={{ marginBottom: '8px', fontWeight: 700 }}>
-          Manage Blocked Words
+          封鎖字詞管理
         </Title>
         <Text c="dimmed" size="sm">
-          Add or remove words that will be blocked from short link codes. Only words of 3-4 characters will actually block codes. Words from{' '}
+          新增或移除短網址代碼中不允許出現的字詞。實際上只有 3–4 個字元的字詞會封鎖代碼。來自{' '}
           <Text span fw={600} style={{ fontFamily: 'monospace' }}>
             blocked_words.txt
           </Text>{' '}
-          are loaded automatically.
+          的字詞會自動載入。
         </Text>
       </div>
 
@@ -102,8 +102,8 @@ export function BlockedWordsPage() {
         <Stack gap="md">
           <Group align="flex-end" wrap="nowrap">
             <TextInput
-              label="Add New Word"
-              placeholder="Enter word (1-4 characters)"
+              label="新增字詞"
+              placeholder="請輸入字詞（1–4 個字元）"
               value={newWord}
               onChange={(e) => setNewWord(e.currentTarget.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 4))}
               maxLength={4}
@@ -127,7 +127,7 @@ export function BlockedWordsPage() {
                 fontWeight: 600,
               }}
             >
-              Add
+              新增
             </Button>
           </Group>
         </Stack>
@@ -146,8 +146,8 @@ export function BlockedWordsPage() {
         <Table highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th style={{ fontWeight: 600 }}>Word</Table.Th>
-              <Table.Th style={{ width: '120px', fontWeight: 600 }}>Blocks Codes</Table.Th>
+              <Table.Th style={{ fontWeight: 600 }}>字詞</Table.Th>
+              <Table.Th style={{ width: '120px', fontWeight: 600 }}>是否封鎖代碼</Table.Th>
               <Table.Th style={{ width: '100px' }}></Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -156,7 +156,7 @@ export function BlockedWordsPage() {
               <Table.Tr>
                 <Table.Td colSpan={3}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">
-                    No blocked words found
+                    尚無封鎖字詞
                   </Text>
                 </Table.Td>
               </Table.Tr>
@@ -172,7 +172,7 @@ export function BlockedWordsPage() {
                     </Table.Td>
                     <Table.Td>
                       <Badge color={blocksCodes ? 'red' : 'gray'} size="sm" variant="light">
-                        {blocksCodes ? 'Yes' : 'No'}
+                        {blocksCodes ? '是' : '否'}
                       </Badge>
                     </Table.Td>
                     <Table.Td>
@@ -180,7 +180,7 @@ export function BlockedWordsPage() {
                         variant="subtle"
                         color="red"
                         onClick={() => handleDelete(word)}
-                        aria-label="Delete"
+                        aria-label="刪除"
                         size="md"
                         radius="md"
                       >

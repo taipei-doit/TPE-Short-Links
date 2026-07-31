@@ -42,8 +42,12 @@ class LinkListOut(BaseModel):
 
 
 class LinkUpdateIn(BaseModel):
-    """Only expires_at can be updated; allowed only when status is active or expired."""
+    """Partial update: only fields present in the request are applied.
 
+    Allowed only when status is active or expired (not disabled).
+    """
+
+    original_url: HttpUrl | None = None
     expires_at: dt.datetime | None = None
 
 

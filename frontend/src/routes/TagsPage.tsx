@@ -31,11 +31,11 @@ export function TagsPage() {
       if (data.length === 0) {
         notifications.show({
           color: 'yellow',
-          message: 'No tags found. Tags from tags.txt will be synced automatically.',
+          message: '尚無標籤資料，系統會自動從 tags.txt 同步標籤。',
         });
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Load failed';
+      const msg = e instanceof Error ? e.message : '載入失敗';
       notifications.show({ color: 'red', message: msg });
       console.error('Error loading tags:', e);
     } finally {
@@ -50,38 +50,38 @@ export function TagsPage() {
   async function handleAdd() {
     const trimmed = newTag.trim();
     if (!trimmed) {
-      notifications.show({ color: 'red', message: 'Tag name cannot be empty' });
+      notifications.show({ color: 'red', message: '標籤名稱不可為空白' });
       return;
     }
 
     try {
       await api.createTag(trimmed);
       setNewTag('');
-      notifications.show({ color: 'green', message: 'Tag added' });
+      notifications.show({ color: 'green', message: '標籤已新增' });
       load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Add failed';
+      const msg = e instanceof Error ? e.message : '新增失敗';
       notifications.show({ color: 'red', message: msg });
     }
   }
 
   async function handleDelete(tag: Tag) {
     modals.openConfirmModal({
-      title: 'Delete tag?',
+      title: '刪除標籤？',
       children: (
         <Text size="sm">
-          This will deactivate the tag <Text span fw={600}>{tag.name}</Text>. You cannot delete tags that are still in use by links.
+          將停用標籤 <Text span fw={600}>{tag.name}</Text>。仍有短網址使用中的標籤無法刪除。
         </Text>
       ),
-      labels: { confirm: 'Delete', cancel: 'Cancel' },
+      labels: { confirm: '刪除', cancel: '取消' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
           await api.deleteTag(tag.id);
-          notifications.show({ color: 'green', message: 'Tag deleted' });
+          notifications.show({ color: 'green', message: '標籤已刪除' });
           load();
         } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Delete failed';
+          const msg = e instanceof Error ? e.message : '刪除失敗';
           notifications.show({ color: 'red', message: msg });
         }
       },
@@ -92,14 +92,14 @@ export function TagsPage() {
     <Stack gap="xl">
       <div>
         <Title order={1} style={{ marginBottom: '8px', fontWeight: 700 }}>
-          Manage Tags
+          標籤管理
         </Title>
         <Text c="dimmed" size="sm">
-          Add or remove tags for categorizing short links. Tags from{' '}
+          新增或移除用來分類短網址的標籤。來自{' '}
           <Text span fw={600} style={{ fontFamily: 'monospace' }}>
             tags.txt
           </Text>{' '}
-          are automatically synced to the database.
+          的標籤會自動同步至資料庫。
         </Text>
       </div>
 
@@ -116,8 +116,8 @@ export function TagsPage() {
         <Stack gap="md">
           <Group align="flex-end" wrap="nowrap">
             <TextInput
-              label="Add New Tag"
-              placeholder="Enter tag name"
+              label="新增標籤"
+              placeholder="請輸入標籤名稱"
               value={newTag}
               onChange={(e) => setNewTag(e.currentTarget.value)}
               maxLength={64}
@@ -141,7 +141,7 @@ export function TagsPage() {
                 fontWeight: 600,
               }}
             >
-              Add
+              新增
             </Button>
           </Group>
         </Stack>
@@ -160,8 +160,8 @@ export function TagsPage() {
         <Table highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th style={{ fontWeight: 600 }}>Tag Name</Table.Th>
-              <Table.Th style={{ width: '100px', fontWeight: 600 }}>Status</Table.Th>
+              <Table.Th style={{ fontWeight: 600 }}>標籤名稱</Table.Th>
+              <Table.Th style={{ width: '100px', fontWeight: 600 }}>狀態</Table.Th>
               <Table.Th style={{ width: '100px' }}></Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -170,7 +170,7 @@ export function TagsPage() {
               <Table.Tr>
                 <Table.Td colSpan={3}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">
-                    No tags found
+                    尚無標籤
                   </Text>
                 </Table.Td>
               </Table.Tr>
@@ -184,7 +184,7 @@ export function TagsPage() {
                   </Table.Td>
                   <Table.Td>
                     <Badge color={tag.is_active ? 'green' : 'gray'} size="sm">
-                      {tag.is_active ? 'Active' : 'Inactive'}
+                      {tag.is_active ? '啟用中' : '已停用'}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
@@ -193,7 +193,7 @@ export function TagsPage() {
                       color="red"
                       onClick={() => handleDelete(tag)}
                       disabled={!tag.is_active}
-                      aria-label="Delete"
+                      aria-label="刪除"
                       size="md"
                       radius="md"
                     >

@@ -22,7 +22,7 @@ def _load_blocked_words() -> set[str]:
     if not _BLOCKED_WORDS_FILE.exists():
         raise FileNotFoundError(f"Blocked words file not found: {_BLOCKED_WORDS_FILE}")
     words = set()
-    with open(_BLOCKED_WORDS_FILE, "r") as f:
+    with open(_BLOCKED_WORDS_FILE, "r", encoding="utf-8") as f:
         for line in f:
             word = line.strip().lower()
             if word and len(word) <= 4:
@@ -50,7 +50,7 @@ def load_seed_tags() -> list[str]:
 
     seen: set[str] = set()
     out: list[str] = []
-    with open(_TAGS_FILE, "r") as f:
+    with open(_TAGS_FILE, "r", encoding="utf-8") as f:
         for raw in f:
             line = raw.strip()
             if not line or line.startswith("#"):

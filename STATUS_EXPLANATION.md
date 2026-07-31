@@ -1,4 +1,4 @@
-# Short Link Status Explanation
+﻿# Short Link Status Explanation
 
 The system uses **status** values to control whether a short link can be accessed. Here's what each status means:
 
@@ -16,14 +16,14 @@ The system uses **status** values to control whether a short link can be accesse
 ### 2. **`disabled`**
 - **Meaning**: The link was manually disabled by a user/admin
 - **When set**: When someone calls `POST /api/links/{code}/disable`
-- **Redirect behavior**: Returns `404 Not Found` (link appears to not exist)
+- **Redirect behavior**: Redirects (`302`) to the friendly `/404.html` page
 - **Can be changed**: Currently no API to re-enable (would require direct DB update)
 - **Note**: Once disabled, the code can **never be reused** (per project rules)
 
 ### 3. **`blocked`**
 - **Meaning**: The link was blocked (e.g., for policy violations, spam, etc.)
 - **When set**: Currently only via direct database update (no API endpoint yet)
-- **Redirect behavior**: Returns `404 Not Found` (link appears to not exist)
+- **Redirect behavior**: Redirects (`302`) to the friendly `/404.html` page
 - **Can be changed**: Only via direct database update
 - **Note**: Once blocked, the code can **never be reused** (per project rules)
 
@@ -33,7 +33,7 @@ The system uses **status** values to control whether a short link can be accesse
 - **How it works**: 
   - If `expires_at` is `NULL` → never expires (permanent)
   - If `expires_at <= now()` → expired
-- **Redirect behavior**: Returns `410 Gone` (indicates the resource existed but is no longer available)
+- **Redirect behavior**: Redirects (`302`) to the friendly `/404.html` page
 - **Can be changed**: No - expiration is based on time, cannot be undone
 - **Note**: The `status` field remains `"active"`, but the link is treated as expired
 
@@ -50,7 +50,7 @@ status = "active"
             ↓
         (time passes)
             ↓
-        expires_at <= now() → Expired (410 Gone)
+        expires_at <= now() → Expired (302 → /404.html)
             ↓
         (status still "active" but treated as expired)
 
@@ -58,11 +58,11 @@ Manual Actions:
     ↓
 POST /api/links/{code}/disable
     ↓
-status = "disabled" → 404 Not Found
+status = "disabled" → 302 → /404.html
 
 Direct DB Update:
     ↓
-status = "blocked" → 404 Not Found
+status = "blocked" → 302 → /404.html
 ```
 
 ## Redirect Behavior Summary
@@ -71,11 +71,11 @@ status = "blocked" → 404 Not Found
 |--------|------------|----------------|-----------|
 | `active` | `NULL` (permanent) | ✅ Redirects to URL | `302 Found` |
 | `active` | Future date | ✅ Redirects to URL | `302 Found` |
-| `active` | Past date | ❌ Expired | `410 Gone` |
-| `disabled` | Any | ❌ Not found | `404 Not Found` |
-| `blocked` | Any | ❌ Not found | `404 Not Found` |
-| Not in DB | - | ❌ Not found | `404 Not Found` |
-| Reserved code | - | ❌ Not found | `404 Not Found` |
+| `active` | Past date | ❌ Expired | `302` → `/404.html` |
+| `disabled` | Any | ❌ Not found | `302` → `/404.html` |
+| `blocked` | Any | ❌ Not found | `302` → `/404.html` |
+| Not in DB | - | ❌ Not found | `302` → `/404.html` |
+| Reserved code | - | ❌ Not found | `302` → `/404.html` |
 
 ## Important Notes
 
@@ -83,9 +83,9 @@ status = "blocked" → 404 Not Found
 
 2. **Codes Never Reused**: Once a code is used (even if disabled/blocked/expired), it can **never be reused**. This is enforced by the database unique constraint.
 
-3. **Expired vs Disabled**:
-   - **Expired**: Time-based, returns `410 Gone`, `status` still shows as `"active"`
-   - **Disabled**: Manual action, returns `404 Not Found`, `status` is `"disabled"`
+3. **Expired vs Disabled** (both redirect visitors to `/404.html`):
+   - **Expired**: Time-based, `status` still shows as `"active"`
+   - **Disabled**: Manual action, `status` is `"disabled"`
 
 4. **Filtering**: In the Manage page, you can filter by:
    - `active` - Shows only active, non-expired links
@@ -105,17 +105,17 @@ status = "blocked" → 404 Not Found
 **Scenario 2: Temporary Link**
 - Created: `status = "active"`, `expires_at = "2026-12-31 23:59:59"`
 - Before expiry: Redirects (302)
-- After expiry: Returns 410 Gone
+- After expiry: Redirects (302) to `/404.html`
 - Status field: Still shows `"active"` but `is_expired = true`
 
 **Scenario 3: Disabled Link**
 - Created: `status = "active"`
 - User disables: `status = "disabled"`
-- Result: Returns 404 Not Found
+- Result: Redirects (302) to `/404.html`
 - Code: Can never be reused
 
 **Scenario 4: Blocked Link**
 - Created: `status = "active"`
 - Admin blocks: `status = "blocked"` (via DB)
-- Result: Returns 404 Not Found
+- Result: Redirects (302) to `/404.html`
 - Code: Can never be reused

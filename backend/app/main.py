@@ -607,17 +607,53 @@ def update_link(
     db: Session = Depends(get_db),
     _auth: dict = Depends(get_firebase_user),
 ) -> LinkOut:
-    """Update expiry date. Only allowed when status is active or expired (not disabled)."""
+    """Update original URL and/or expiry. Only fields present in the request are applied.
+
+    Only allowed when status is active or expired (not disabled).
+    """
+    settings = get_settings()
     if is_reserved(code, db):
         raise HTTPException(status_code=404, detail="Not found")
     link = db.execute(select(ShortLink).where(ShortLink.code == code)).scalar_one_or_none()
     if link is None:
         raise HTTPException(status_code=404, detail="Not found")
     if link.status == "disabled":
-        raise HTTPException(status_code=422, detail="Cannot modify expiry when link is disabled; enable it first")
-    if payload.expires_at is not None and payload.expires_at.tzinfo is None:
-        raise HTTPException(status_code=422, detail="expires_at must be timezone-aware")
-    link.expires_at = payload.expires_at
+        raise HTTPException(status_code=422, detail="Cannot modify a disabled link; enable it first")
+
+    fields = payload.model_fields_set
+
+    if "original_url" in fields:
+        if payload.original_url is None:
+            raise HTTPException(status_code=422, detail="original_url cannot be empty")
+        new_url = str(payload.original_url)
+        validate_original_url(new_url, allow_http=settings.ALLOW_HTTP_URLS)
+        now = now_utc()
+        existing_row = (
+            db.execute(
+                select(ShortLink, Tag.name)
+                .join(Tag, Tag.id == ShortLink.tag_id)
+                .where(
+                    ShortLink.original_url == new_url,
+                    ShortLink.id != link.id,
+                    ShortLink.status == "active",
+                    or_(ShortLink.expires_at.is_(None), ShortLink.expires_at > now),
+                )
+            ).first()
+        )
+        if existing_row is not None:
+            existing_link, existing_tag_name = existing_row
+            existing = link_to_out(existing_link, existing_tag_name)
+            raise HTTPException(
+                status_code=409,
+                detail=f"A short link already exists for this URL: {existing.short_url}",
+            )
+        link.original_url = new_url
+
+    if "expires_at" in fields:
+        if payload.expires_at is not None and payload.expires_at.tzinfo is None:
+            raise HTTPException(status_code=422, detail="expires_at must be timezone-aware")
+        link.expires_at = payload.expires_at
+
     db.add(link)
     db.commit()
     db.refresh(link)
@@ -626,27 +662,8 @@ def update_link(
     return link_to_out(link, tag.name)
 
 
-@app.get("/{code}")
-def redirect(
-    code: str = Path(..., min_length=1, max_length=32),
-    db: Session = Depends(get_db),
-) -> Response:
-    # Reserved codes must never resolve, even if present in DB.
-    if is_reserved(code, db):
-        raise HTTPException(status_code=404, detail="Not found")
-
-    link = db.execute(select(ShortLink).where(ShortLink.code == code)).scalar_one_or_none()
-    if link is None:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    if link.status == "disabled":
-        raise HTTPException(status_code=404, detail="Not found")
-
-    expires_at = as_utc(link.expires_at)
-    if expires_at is not None and expires_at <= now_utc():
-        # Show a friendly HTML page for expired links (instead of JSON).
-        html = """<!doctype html>
-<html lang="zh-Hant">
+NOT_FOUND_HTML = """<!doctype html>
+<html lang="zh-Hant-TW">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -657,25 +674,56 @@ def redirect(
       .card { background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:28px; box-shadow: 0 10px 25px rgba(15,23,42,0.08); }
       h1 { font-size: 28px; margin: 0 0 12px; }
       p { font-size: 16px; line-height: 1.7; margin: 0 0 8px; color:#334155; }
-      .muted { color:#64748b; margin-top: 16px; font-size: 14px; }
     </style>
   </head>
   <body>
     <div class="wrap">
       <div class="card">
         <h1>抱歉！找不到您要找的頁面。</h1>
-        <p>如網址正確，表示該頁面已下架，</p>
+        <p>如網址正確，表示該頁面已下架或連結已失效，</p>
         <p>如需了解進一步資訊，請逕洽網站頁面之主責機關。</p>
-        <p class="muted">狀態碼：410（連結已過期）</p>
       </div>
     </div>
   </body>
 </html>"""
-        return HTMLResponse(
-            content=html,
-            status_code=410,
-            headers={"Cache-Control": "no-store"},
-        )
+
+
+def redirect_to_not_found() -> RedirectResponse:
+    settings = get_settings()
+    return RedirectResponse(
+        url=f"{settings.PUBLIC_BASE_URL.rstrip('/')}/404.html",
+        status_code=302,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+# Must be declared before the catch-all /{code} route so "404.html" is never
+# treated as a short code (which would redirect to itself in a loop when the
+# public domain points at this service).
+@app.get("/404.html")
+def not_found_page() -> HTMLResponse:
+    return HTMLResponse(content=NOT_FOUND_HTML, status_code=200)
+
+
+@app.get("/{code}")
+def redirect(
+    code: str = Path(..., min_length=1, max_length=32),
+    db: Session = Depends(get_db),
+) -> Response:
+    # Reserved codes must never resolve, even if present in DB.
+    if is_reserved(code, db):
+        return redirect_to_not_found()
+
+    link = db.execute(select(ShortLink).where(ShortLink.code == code)).scalar_one_or_none()
+    if link is None:
+        return redirect_to_not_found()
+
+    if link.status == "disabled":
+        return redirect_to_not_found()
+
+    expires_at = as_utc(link.expires_at)
+    if expires_at is not None and expires_at <= now_utc():
+        return redirect_to_not_found()
 
     # Increment click count (only count successful redirects for active, non-expired links)
     link.click_count += 1

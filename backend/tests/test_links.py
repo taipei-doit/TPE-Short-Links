@@ -46,12 +46,13 @@ def test_create_retries_on_unique_violation(client, monkeypatch):
     assert r2.json()["code"] == "NEWCODE1"
 
 
-def test_redirect_reserved_is_404(client):
+def test_redirect_reserved_goes_to_404_page(client):
     r = client.get("/reserved", follow_redirects=False)
-    assert r.status_code == 404
+    assert r.status_code == 302
+    assert r.headers["location"].endswith("/404.html")
 
 
-def test_redirect_expired_is_410(client, monkeypatch):
+def test_redirect_expired_goes_to_404_page(client, monkeypatch):
     import app.main as main_mod
 
     monkeypatch.setattr(main_mod, "generate_code", lambda _n: "EXPIRE1")
@@ -62,10 +63,11 @@ def test_redirect_expired_is_410(client, monkeypatch):
     # Travel forward by patching now_utc used by redirect
     monkeypatch.setattr(main_mod, "now_utc", lambda: dt.datetime.now(dt.UTC) + dt.timedelta(days=1))
     rr = client.get("/EXPIRE1", follow_redirects=False)
-    assert rr.status_code == 410
+    assert rr.status_code == 302
+    assert rr.headers["location"].endswith("/404.html")
 
 
-def test_disable_makes_redirect_404(client, monkeypatch):
+def test_disable_makes_redirect_go_to_404_page(client, monkeypatch):
     import app.main as main_mod
 
     monkeypatch.setattr(main_mod, "generate_code", lambda _n: "DISABLE1")
@@ -76,5 +78,5 @@ def test_disable_makes_redirect_404(client, monkeypatch):
     assert d.status_code == 200
 
     rr = client.get("/DISABLE1", follow_redirects=False)
-    assert rr.status_code == 404
-
+    assert rr.status_code == 302
+    assert rr.headers["location"].endswith("/404.html")

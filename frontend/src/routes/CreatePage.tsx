@@ -40,20 +40,20 @@ export function CreatePage() {
   );
 
   const originalUrlError = useMemo(() => {
-    if (!originalUrl.trim()) return 'Original URL is required';
+    if (!originalUrl.trim()) return '請輸入原始網址';
     try {
       const u = new URL(originalUrl.trim());
-      if (u.protocol !== 'https:') return 'Must be https:// (http:// disabled by default)';
+      if (u.protocol !== 'https:') return '必須為 https:// 開頭（預設不允許 http://）';
       return null;
     } catch {
-      return 'Must be a valid absolute URL';
+      return '必須為有效的完整網址';
     }
   }, [originalUrl]);
 
   const expiryError = useMemo(() => {
     if (expiryMode === 'permanent') return null;
-    if (!expiresAt) return 'Expiry date/time is required';
-    if (dayjs(expiresAt).isBefore(dayjs())) return 'Expiry must be in the future';
+    if (!expiresAt) return '請選擇到期日期／時間';
+    if (dayjs(expiresAt).isBefore(dayjs())) return '到期時間必須晚於現在';
     return null;
   }, [expiryMode, expiresAt]);
 
@@ -73,19 +73,18 @@ export function CreatePage() {
       };
       const created = await api.createLink(payload);
       setResult(created);
-      notifications.show({ color: 'green', message: 'Short link created' });
+      notifications.show({ color: 'green', message: '短網址建立成功' });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Create failed';
+      const msg = e instanceof Error ? e.message : '建立失敗';
 
       if (msg.startsWith('A short link already exists for this URL:')) {
         const existingUrl = msg.replace('A short link already exists for this URL:', '').trim();
         modals.open({
-          title: 'Short link already exists',
+          title: '短網址已存在',
           children: (
             <Stack gap="xs">
               <Text size="sm">
-                There is already an active short link for this URL. You can reuse the existing link instead of creating a new
-                one.
+                這個網址已經有使用中的短網址，建議直接沿用現有短網址，不需重複建立。
               </Text>
               <Text
                 size="sm"
@@ -113,10 +112,10 @@ export function CreatePage() {
     <Stack gap="xl">
       <div>
         <Title order={1} style={{ marginBottom: '8px', fontWeight: 700 }}>
-          Create Short Link
+          建立短網址
         </Title>
         <Text c="dimmed" size="sm">
-          Generate a short, memorable link for your URL
+          為您的網址產生簡短好記的短網址
         </Text>
       </div>
 
@@ -132,7 +131,7 @@ export function CreatePage() {
       >
         <Stack gap="lg">
           <TextInput
-            label="Original URL"
+            label="原始網址"
             placeholder="https://example.com/some/path?x=y"
             value={originalUrl}
             onChange={(e) => setOriginalUrl(e.currentTarget.value)}
@@ -142,28 +141,28 @@ export function CreatePage() {
           />
 
           <Checkbox
-            label="Use custom code (manual entry)"
+            label="使用自訂代碼（手動輸入）"
             checked={useManualCode}
             onChange={(e) => setUseManualCode(e.currentTarget.checked)}
           />
 
           {useManualCode ? (
             <TextInput
-              label="Custom Code"
-              placeholder="Enter custom code (1-32 characters)"
+              label="自訂代碼"
+              placeholder="請輸入自訂代碼（1–32 個字元）"
               value={manualCode}
               onChange={(e) => setManualCode(e.currentTarget.value.slice(0, 32))}
               maxLength={32}
               size="md"
               radius="md"
-              description="Custom code (1-32 characters, can include Chinese characters, letters, and numbers). Cannot be a reserved code (e.g., 'api', 'docs'). Must be unique."
+              description="自訂代碼（1–32 個字元，可使用中文、英文字母與數字），不可與現有代碼重複，也不可使用系統保留字（如 api、docs）。"
             />
           ) : null}
 
           <Group grow align="flex-start">
             <Select
-              label="Tag"
-              placeholder="Pick a tag"
+              label="標籤"
+              placeholder="請選擇標籤"
               data={tagOptions}
               value={tagId}
               onChange={(value) => {
@@ -171,17 +170,17 @@ export function CreatePage() {
                 setTagId(value);
               }}
               searchable
-              nothingFoundMessage="No matching tags"
+              nothingFoundMessage="查無符合的標籤"
               maxDropdownHeight={320}
-              error={tagTouched && !tagId ? 'Tag is required' : null}
+              error={tagTouched && !tagId ? '請選擇標籤' : null}
               size="md"
               radius="md"
             />
             <Select
-              label="Expiry"
+              label="有效期限"
               data={[
-                { value: 'permanent', label: 'Permanent' },
-                { value: 'datetime', label: 'Date/Time' },
+                { value: 'permanent', label: '永久有效' },
+                { value: 'datetime', label: '指定日期／時間' },
               ]}
               value={expiryMode}
               onChange={(v) => setExpiryMode((v as ExpiryMode) ?? 'permanent')}
@@ -192,7 +191,7 @@ export function CreatePage() {
 
           {expiryMode === 'datetime' ? (
             <DateTimePicker
-              label="Expires at"
+              label="到期時間"
               value={expiresAt}
               onChange={setExpiresAt}
               error={expiryError}
@@ -203,8 +202,8 @@ export function CreatePage() {
           ) : null}
 
           <Textarea
-            label="Note"
-            placeholder="Optional note about this link"
+            label="備註"
+            placeholder="選填，可記錄這個短網址的用途"
             value={note}
             onChange={(e) => setNote(e.currentTarget.value)}
             autosize
@@ -226,11 +225,11 @@ export function CreatePage() {
                 fontWeight: 600,
               }}
             >
-              Create Short Link
+              建立短網址
             </Button>
           </Group>
           <Text size="xs" c="dimmed" mt="xs" style={{ lineHeight: 1.6 }}>
-            CODE is 4 characters (case-sensitive) and will never be reused. English words are blocked.
+            自動產生的代碼為 4 個字元（區分大小寫），代碼一經使用即不再重複配發；系統會避開常見英文單字。
           </Text>
         </Stack>
       </Card>
@@ -249,9 +248,9 @@ export function CreatePage() {
           <Stack gap="md">
             <div>
               <Title order={4} style={{ marginBottom: '4px', color: 'var(--mantine-color-blue-9)' }}>
-                ✓ Short Link Created!
+                ✓ 短網址建立成功！
               </Title>
-              <Text c="dimmed" size="sm">Your link is ready to share</Text>
+              <Text c="dimmed" size="sm">您的短網址已可分享使用</Text>
             </div>
             <div
               style={{
@@ -289,7 +288,7 @@ export function CreatePage() {
                       fontWeight: 600,
                     }}
                   >
-                    {copied ? '✓ Copied!' : 'Copy Link'}
+                    {copied ? '✓ 已複製！' : '複製連結'}
                   </Button>
                 )}
               </CopyButton>
@@ -302,7 +301,7 @@ export function CreatePage() {
                 size="md"
                 radius="md"
               >
-                Open Link
+                開啟連結
               </Button>
               <Button
                 variant="outline"
@@ -313,7 +312,7 @@ export function CreatePage() {
                 size="md"
                 radius="md"
               >
-                Download QR Code
+                下載 QR Code
               </Button>
             </Group>
           </Stack>

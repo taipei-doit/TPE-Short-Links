@@ -30,7 +30,7 @@ export function AdminsPage() {
       const data = await api.listAdmins();
       setEmails(data);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Load failed';
+      const msg = e instanceof Error ? e.message : '載入失敗';
       notifications.show({ color: 'red', message: msg });
       console.error('Error loading admins:', e);
     } finally {
@@ -45,21 +45,21 @@ export function AdminsPage() {
   async function handleAdd() {
     const trimmed = newEmail.trim().toLowerCase();
     if (!trimmed) {
-      notifications.show({ color: 'red', message: 'Enter an email' });
+      notifications.show({ color: 'red', message: '請輸入電子郵件' });
       return;
     }
     if (!isValidEmail(trimmed)) {
-      notifications.show({ color: 'red', message: 'Enter a valid email address' });
+      notifications.show({ color: 'red', message: '請輸入有效的電子郵件地址' });
       return;
     }
 
     try {
       await api.addAdmin(trimmed);
       setNewEmail('');
-      notifications.show({ color: 'green', message: 'Admin added' });
+      notifications.show({ color: 'green', message: '管理員已新增' });
       load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Add failed';
+      const msg = e instanceof Error ? e.message : '新增失敗';
       notifications.show({ color: 'red', message: msg });
     }
   }
@@ -67,10 +67,10 @@ export function AdminsPage() {
   async function handleRemove(email: string) {
     try {
       await api.removeAdmin(email);
-      notifications.show({ color: 'green', message: 'Admin removed' });
+      notifications.show({ color: 'green', message: '管理員已移除' });
       load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Remove failed';
+      const msg = e instanceof Error ? e.message : '移除失敗';
       notifications.show({ color: 'red', message: msg });
     }
   }
@@ -79,10 +79,10 @@ export function AdminsPage() {
     <Stack gap="xl">
       <div>
         <Title order={1} style={{ marginBottom: '8px', fontWeight: 700 }}>
-          Admin users
+          管理員
         </Title>
         <Text c="dimmed" size="sm">
-          Emails that can request a magic login link. Add or remove admins here.
+          可申請登入連結的電子郵件清單，可在此新增或移除管理員。
         </Text>
       </div>
 
@@ -99,7 +99,7 @@ export function AdminsPage() {
         <Stack gap="md">
           <Group align="flex-end" wrap="nowrap">
             <TextInput
-              label="Add admin email"
+              label="新增管理員電子郵件"
               placeholder="admin@example.com"
               type="email"
               value={newEmail}
@@ -122,7 +122,7 @@ export function AdminsPage() {
                 fontWeight: 600,
               }}
             >
-              Add
+              新增
             </Button>
           </Group>
         </Stack>
@@ -141,7 +141,7 @@ export function AdminsPage() {
         <Table highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th style={{ fontWeight: 600 }}>Email</Table.Th>
+              <Table.Th style={{ fontWeight: 600 }}>電子郵件</Table.Th>
               <Table.Th style={{ width: 100 }}></Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -150,7 +150,7 @@ export function AdminsPage() {
               <Table.Tr>
                 <Table.Td colSpan={2}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">
-                    Loading…
+                    載入中…
                   </Text>
                 </Table.Td>
               </Table.Tr>
@@ -158,7 +158,7 @@ export function AdminsPage() {
               <Table.Tr>
                 <Table.Td colSpan={2}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">
-                    No admin emails yet. Add one above or ensure ADMIN_WHITELIST is set and request a login link to migrate.
+                    尚無管理員電子郵件。請在上方新增，或確認已設定 ADMIN_WHITELIST 並申請登入連結以完成轉移。
                   </Text>
                 </Table.Td>
               </Table.Tr>
@@ -175,7 +175,7 @@ export function AdminsPage() {
                       variant="subtle"
                       color="red"
                       onClick={() => handleRemove(email)}
-                      aria-label="Remove admin"
+                      aria-label="移除管理員"
                       size="md"
                       radius="md"
                     >

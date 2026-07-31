@@ -15,11 +15,11 @@ export function App() {
   const { user, loading, signOut } = useAuth();
 
   const navItems = [
-    { path: '/create', label: 'Create', icon: IconLink },
-    { path: '/manage', label: 'Manage', icon: IconListSearch },
-    { path: '/tags', label: 'Tags', icon: IconTags },
-    { path: '/blocked-words', label: 'Blocked Words', icon: IconShield },
-    { path: '/admins', label: 'Admins', icon: IconUsers },
+    { path: '/create', label: '建立短網址', icon: IconLink },
+    { path: '/manage', label: '管理短網址', icon: IconListSearch },
+    { path: '/tags', label: '標籤管理', icon: IconTags },
+    { path: '/blocked-words', label: '封鎖字詞', icon: IconShield },
+    { path: '/admins', label: '管理員', icon: IconUsers },
   ];
 
   return (
@@ -52,7 +52,7 @@ export function App() {
                 backgroundClip: 'text',
               }}
             >
-              TPE Short Links
+              臺北市短網址服務
             </Title>
             <Group gap="xs" align="center" wrap="nowrap">
               {user && navItems.map((item) => {
@@ -100,7 +100,7 @@ export function App() {
                   radius="md"
                   onClick={() => signOut()}
                 >
-                  Sign out
+                  登出
                 </Button>
               )}
             </Group>
@@ -110,7 +110,7 @@ export function App() {
       <AppShell.Main>
         <Container size="lg" py="xl">
           {loading ? (
-            <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
+            <div style={{ padding: '2rem', textAlign: 'center' }}>載入中…</div>
           ) : !user ? (
             <Routes>
               <Route path="/login" element={<LoginPage />} />

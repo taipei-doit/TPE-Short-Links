@@ -16,7 +16,7 @@ import { DateTimePicker } from '@mantine/dates';
 import '@mantine/dates/styles.css';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconBan, IconCalendar, IconCheck, IconRefresh } from '@tabler/icons-react';
+import { IconBan, IconCalendar, IconCheck, IconPencil, IconRefresh } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -42,24 +42,24 @@ function EditExpiryForm({
   return (
     <Stack gap="md">
       <Select
-        label="Expiry"
+        label="有效期限"
         data={[
-          { value: 'permanent', label: 'Permanent' },
-          { value: 'datetime', label: 'Date/Time' },
+          { value: 'permanent', label: '永久有效' },
+          { value: 'datetime', label: '指定日期／時間' },
         ]}
         value={mode}
         onChange={(v) => setMode((v as 'permanent' | 'datetime') ?? 'permanent')}
       />
       {mode === 'datetime' && (
         <DateTimePicker
-          label="Expires at"
+          label="到期時間"
           value={expiresAt}
           onChange={setExpiresAt}
         />
       )}
       <Group justify="flex-end" gap="sm">
         <Button variant="default" onClick={onCancel}>
-          Cancel
+          取消
         </Button>
         <Button
           loading={saving}
@@ -69,7 +69,64 @@ function EditExpiryForm({
             setSaving(false);
           }}
         >
-          Save
+          儲存
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
+function EditUrlForm({
+  link,
+  onSave,
+  onCancel,
+}: {
+  link: Link;
+  onSave: (originalUrl: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [url, setUrl] = useState(link.original_url);
+  const [saving, setSaving] = useState(false);
+
+  const urlError = (() => {
+    if (!url.trim()) return '請輸入原始網址';
+    try {
+      const u = new URL(url.trim());
+      if (u.protocol !== 'https:') return '必須為 https:// 開頭（預設不允許 http://）';
+      return null;
+    } catch {
+      return '必須為有效的完整網址';
+    }
+  })();
+
+  return (
+    <Stack gap="md">
+      <TextInput
+        label="原始網址"
+        placeholder="https://example.com/some/path"
+        value={url}
+        onChange={(e) => setUrl(e.currentTarget.value)}
+        error={url !== link.original_url ? urlError : null}
+        data-autofocus
+      />
+      <Text size="xs" c="dimmed">
+        短網址代碼 <Text span fw={600} style={{ fontFamily: 'monospace' }}>{link.code}</Text>{' '}
+        不變，儲存後會改為導向新的網址。
+      </Text>
+      <Group justify="flex-end" gap="sm">
+        <Button variant="default" onClick={onCancel}>
+          取消
+        </Button>
+        <Button
+          loading={saving}
+          disabled={!!urlError || url.trim() === link.original_url}
+          onClick={async () => {
+            setSaving(true);
+            await onSave(url.trim());
+            setSaving(false);
+          }}
+        >
+          儲存
         </Button>
       </Group>
     </Stack>
@@ -77,10 +134,10 @@ function EditExpiryForm({
 }
 
 function statusBadge(link: Link) {
-  if (link.is_expired) return <Badge color="orange">expired</Badge>;
-  if (link.status === 'active') return <Badge color="green">active</Badge>;
-  if (link.status === 'disabled') return <Badge color="gray">disabled</Badge>;
-  return <Badge color="orange">expired</Badge>;
+  if (link.is_expired) return <Badge color="orange">已過期</Badge>;
+  if (link.status === 'active') return <Badge color="green">使用中</Badge>;
+  if (link.status === 'disabled') return <Badge color="gray">已停用</Badge>;
+  return <Badge color="orange">已過期</Badge>;
 }
 
 export function ManagePage() {
@@ -107,7 +164,7 @@ export function ManagePage() {
   }, []);
 
   const tagOptions = useMemo(
-    () => [{ value: '', label: 'All tags' }, ...tags.map((t) => ({ value: String(t.id), label: t.name }))],
+    () => [{ value: '', label: '全部標籤' }, ...tags.map((t) => ({ value: String(t.id), label: t.name }))],
     [tags],
   );
 
@@ -124,7 +181,7 @@ export function ManagePage() {
       setItems(res.items);
       setTotal(res.total);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Load failed';
+      const msg = e instanceof Error ? e.message : '載入失敗';
       notifications.show({ color: 'red', message: msg });
     } finally {
       setLoading(false);
@@ -140,29 +197,61 @@ export function ManagePage() {
 
   function confirmEnable(code: string) {
     modals.openConfirmModal({
-      title: 'Enable link',
+      title: '啟用短網址',
       children: (
         <Text size="sm">
-          This link will be active again. If the expiry date has passed, it will show as expired until you extend the expiry.
+          此短網址將重新啟用。若到期時間已過，會顯示為「已過期」，需延長有效期限後才能繼續轉址。
         </Text>
       ),
-      labels: { confirm: 'Enable', cancel: 'Cancel' },
+      labels: { confirm: '啟用', cancel: '取消' },
       confirmProps: { color: 'green' },
       onConfirm: async () => {
         try {
           await api.enableLink(code);
-          notifications.show({ color: 'green', message: 'Link enabled' });
+          notifications.show({ color: 'green', message: '短網址已啟用' });
           load();
         } catch (e) {
-          notifications.show({ color: 'red', message: e instanceof Error ? e.message : 'Failed' });
+          notifications.show({ color: 'red', message: e instanceof Error ? e.message : '操作失敗' });
         }
       },
     });
   }
 
+  function openEditUrlModal(l: Link) {
+    modals.open({
+      title: '編輯原始網址',
+      size: 'lg',
+      children: (
+        <EditUrlForm
+          link={l}
+          onSave={async (newUrl) => {
+            try {
+              await api.updateLinkUrl(l.code, newUrl);
+              notifications.show({ color: 'green', message: '原始網址已更新' });
+              modals.closeAll();
+              load();
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : '操作失敗';
+              if (msg.startsWith('A short link already exists for this URL:')) {
+                const existingUrl = msg.replace('A short link already exists for this URL:', '').trim();
+                notifications.show({
+                  color: 'red',
+                  message: `這個網址已經有使用中的短網址：${existingUrl}`,
+                });
+              } else {
+                notifications.show({ color: 'red', message: msg });
+              }
+            }
+          }}
+          onCancel={() => modals.closeAll()}
+        />
+      ),
+    });
+  }
+
   function openEditExpiryModal(l: Link) {
     modals.open({
-      title: 'Edit expiry',
+      title: '編輯有效期限',
       size: 'md',
       children: (
         <EditExpiryForm
@@ -171,11 +260,11 @@ export function ManagePage() {
           onSave={async (newExpiresAt) => {
             try {
               await api.updateLinkExpiry(l.code, newExpiresAt ? newExpiresAt.toISOString() : null);
-              notifications.show({ color: 'green', message: 'Expiry updated' });
+              notifications.show({ color: 'green', message: '有效期限已更新' });
               modals.closeAll();
               load();
             } catch (e) {
-              notifications.show({ color: 'red', message: e instanceof Error ? e.message : 'Failed' });
+              notifications.show({ color: 'red', message: e instanceof Error ? e.message : '操作失敗' });
             }
           }}
           onCancel={() => modals.closeAll()}
@@ -195,27 +284,27 @@ export function ManagePage() {
       const url = `${API_BASE_URL}/api/links/export${qs ? `?${qs}` : ''}`;
       window.open(url, '_blank');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Export failed';
+      const msg = e instanceof Error ? e.message : '匯出失敗';
       notifications.show({ color: 'red', message: msg });
     }
   }
   async function confirmDisable(code: string) {
     modals.openConfirmModal({
-      title: 'Disable link?',
+      title: '停用短網址？',
       children: (
         <Text size="sm">
-          This will mark <Text span fw={600}>{code}</Text> as disabled. The code will never be reusable.
+          將把 <Text span fw={600}>{code}</Text> 標記為停用。此代碼日後不會再重新配發使用。
         </Text>
       ),
-      labels: { confirm: 'Disable', cancel: 'Cancel' },
+      labels: { confirm: '停用', cancel: '取消' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
           await api.disableLink(code);
-          notifications.show({ color: 'green', message: 'Disabled' });
+          notifications.show({ color: 'green', message: '已停用' });
           load();
         } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Disable failed';
+          const msg = e instanceof Error ? e.message : '停用失敗';
           notifications.show({ color: 'red', message: msg });
         }
       },
@@ -227,10 +316,10 @@ export function ManagePage() {
       <Group justify="space-between" align="center">
         <div>
           <Title order={1} style={{ marginBottom: '8px', fontWeight: 700 }}>
-            Manage Links
+            管理短網址
           </Title>
           <Text c="dimmed" size="sm">
-            View, search, and manage your short links
+            檢視、搜尋並管理您的短網址
           </Text>
         </div>
         <Group gap="sm">
@@ -242,10 +331,10 @@ export function ManagePage() {
             size="md"
             radius="md"
           >
-            Refresh
+            重新整理
           </Button>
           <Button variant="outline" size="md" radius="md" onClick={exportCsv}>
-            Export CSV
+            匯出 CSV
           </Button>
         </Group>
       </Group>
@@ -263,8 +352,8 @@ export function ManagePage() {
         <Stack gap="md">
           <Group align="flex-end" grow>
             <TextInput
-              label="Search"
-              placeholder="code, URL, note"
+              label="搜尋"
+              placeholder="代碼、網址或備註"
               value={query}
               onChange={(e) => setQuery(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -277,7 +366,7 @@ export function ManagePage() {
               radius="md"
             />
             <Select
-              label="Tag"
+              label="標籤"
               data={tagOptions}
               value={tagId ?? ''}
               onChange={(v) => {
@@ -285,18 +374,18 @@ export function ManagePage() {
                 setTagId(v && v !== '' ? v : null);
               }}
               searchable
-              nothingFoundMessage="No matching tags"
+              nothingFoundMessage="查無符合的標籤"
               maxDropdownHeight={320}
               size="md"
               radius="md"
             />
             <Select
-              label="Status"
+              label="狀態"
               data={[
-                { value: 'all', label: 'All' },
-                { value: 'active', label: 'Active' },
-                { value: 'expired', label: 'Expired' },
-                { value: 'disabled', label: 'Disabled' },
+                { value: 'all', label: '全部' },
+                { value: 'active', label: '使用中' },
+                { value: 'expired', label: '已過期' },
+                { value: 'disabled', label: '已停用' },
               ]}
               value={status}
               onChange={(v) => {
@@ -320,7 +409,7 @@ export function ManagePage() {
                 fontWeight: 600,
               }}
             >
-              Search
+              搜尋
             </Button>
           </Group>
         </Stack>
@@ -339,15 +428,15 @@ export function ManagePage() {
         <Table highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th style={{ width: '80px', fontWeight: 600 }}>Code</Table.Th>
-              <Table.Th style={{ width: '200px', fontWeight: 600 }}>Short URL</Table.Th>
-              <Table.Th style={{ fontWeight: 600 }}>Original URL</Table.Th>
-              <Table.Th style={{ width: '120px', fontWeight: 600 }}>Tag</Table.Th>
-              <Table.Th style={{ width: '140px', fontWeight: 600 }}>Created</Table.Th>
-              <Table.Th style={{ width: '140px', fontWeight: 600 }}>Expiry</Table.Th>
-              <Table.Th style={{ width: '100px', fontWeight: 600 }}>Status</Table.Th>
-              <Table.Th style={{ width: '100px', fontWeight: 600 }}>Clicks</Table.Th>
-              <Table.Th style={{ width: '100px' }}>Actions</Table.Th>
+              <Table.Th style={{ width: '80px', fontWeight: 600 }}>代碼</Table.Th>
+              <Table.Th style={{ width: '200px', fontWeight: 600 }}>短網址</Table.Th>
+              <Table.Th style={{ fontWeight: 600 }}>原始網址</Table.Th>
+              <Table.Th style={{ width: '120px', fontWeight: 600 }}>標籤</Table.Th>
+              <Table.Th style={{ width: '140px', fontWeight: 600 }}>建立時間</Table.Th>
+              <Table.Th style={{ width: '140px', fontWeight: 600 }}>有效期限</Table.Th>
+              <Table.Th style={{ width: '100px', fontWeight: 600 }}>狀態</Table.Th>
+              <Table.Th style={{ width: '100px', fontWeight: 600 }}>點擊次數</Table.Th>
+              <Table.Th style={{ width: '100px' }}>操作</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -355,7 +444,7 @@ export function ManagePage() {
               <Table.Tr>
                 <Table.Td colSpan={9}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">
-                    Loading...
+                    載入中…
                   </Text>
                 </Table.Td>
               </Table.Tr>
@@ -364,8 +453,8 @@ export function ManagePage() {
                 <Table.Td colSpan={9}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">
                     {query || tagId || status !== 'all'
-                      ? 'No results found matching your filters'
-                      : 'No links found. Create your first short link on the Create page.'}
+                      ? '查無符合篩選條件的資料'
+                      : '目前尚無短網址，請至「建立短網址」頁面建立第一筆。'}
                   </Text>
                 </Table.Td>
               </Table.Tr>
@@ -413,7 +502,7 @@ export function ManagePage() {
                     <Text size="sm">{dayjs(l.created_at).format('YYYY-MM-DD HH:mm')}</Text>
                   </Table.Td>
                   <Table.Td>
-                    <Text size="sm">{l.expires_at ? dayjs(l.expires_at).format('YYYY-MM-DD HH:mm') : 'Permanent'}</Text>
+                    <Text size="sm">{l.expires_at ? dayjs(l.expires_at).format('YYYY-MM-DD HH:mm') : '永久有效'}</Text>
                   </Table.Td>
                   <Table.Td>{statusBadge(l)}</Table.Td>
                   <Table.Td>
@@ -428,7 +517,7 @@ export function ManagePage() {
                           variant="subtle"
                           color="green"
                           onClick={() => confirmEnable(l.code)}
-                          aria-label="Enable"
+                          aria-label="啟用"
                           size="md"
                           radius="md"
                         >
@@ -437,22 +526,34 @@ export function ManagePage() {
                       ) : (
                         <>
                           {canEditExpiry(l) && (
-                            <ActionIcon
-                              variant="subtle"
-                              color="blue"
-                              onClick={() => openEditExpiryModal(l)}
-                              aria-label="Edit expiry"
-                              size="md"
-                              radius="md"
-                            >
-                              <IconCalendar size={18} />
-                            </ActionIcon>
+                            <>
+                              <ActionIcon
+                                variant="subtle"
+                                color="blue"
+                                onClick={() => openEditUrlModal(l)}
+                                aria-label="編輯原始網址"
+                                size="md"
+                                radius="md"
+                              >
+                                <IconPencil size={18} />
+                              </ActionIcon>
+                              <ActionIcon
+                                variant="subtle"
+                                color="blue"
+                                onClick={() => openEditExpiryModal(l)}
+                                aria-label="編輯有效期限"
+                                size="md"
+                                radius="md"
+                              >
+                                <IconCalendar size={18} />
+                              </ActionIcon>
+                            </>
                           )}
                           <ActionIcon
                             variant="subtle"
                             color="red"
                             onClick={() => confirmDisable(l.code)}
-                            aria-label="Disable"
+                            aria-label="停用"
                             size="md"
                             radius="md"
                           >
@@ -470,7 +571,7 @@ export function ManagePage() {
 
         <Group justify="space-between" mt="xl" align="center">
           <Text size="sm" c="dimmed" fw={500}>
-            {total} {total === 1 ? 'link' : 'links'} total
+            共 {total} 筆短網址
           </Text>
           <Pagination value={page} onChange={setPage} total={totalPages} size="md" radius="md" />
         </Group>

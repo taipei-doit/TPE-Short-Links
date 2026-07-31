@@ -19,10 +19,10 @@ export function LoginPage() {
       setSent(true);
       notifications.show({
         color: 'green',
-        message: 'Login link sent. Check your email.',
+        message: '登入連結已寄出，請查收電子郵件。',
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to send login link';
+      const message = err instanceof Error ? err.message : '登入連結寄送失敗';
       notifications.show({ color: 'red', message });
     } finally {
       setLoading(false);
@@ -37,19 +37,19 @@ export function LoginPage() {
       style={{ maxWidth: 420, margin: '2rem auto' }}
     >
       <Stack gap="md">
-        <Title order={3}>Admin login</Title>
+        <Title order={3}>管理員登入</Title>
         <Text size="sm" c="dimmed">
-          Enter your admin email. We’ll send you a one-time link to sign in.
+          請輸入管理員電子郵件，系統將寄送一次性登入連結給您。
         </Text>
         {sent ? (
           <Text size="sm" c="green">
-            Check your inbox and click the link to sign in. You can close this page.
+            請至信箱點擊登入連結完成登入，本頁面可直接關閉。
           </Text>
         ) : (
           <form onSubmit={handleSubmit}>
             <Stack gap="md">
               <TextInput
-                label="Email"
+                label="電子郵件"
                 type="email"
                 placeholder="admin@example.com"
                 value={email}
@@ -58,7 +58,7 @@ export function LoginPage() {
                 autoComplete="email"
               />
               <Button type="submit" loading={loading} fullWidth>
-                Send login link
+                寄送登入連結
               </Button>
             </Stack>
           </form>

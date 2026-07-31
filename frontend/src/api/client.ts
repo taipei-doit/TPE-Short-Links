@@ -58,6 +58,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ expires_at }),
     }),
+  updateLinkUrl: (code: string, original_url: string) =>
+    apiFetch<Link>(`/api/links/${code}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ original_url }),
+    }),
   getQrCodeUrl: (code: string) => `${API_BASE_URL}/api/links/${code}/qrcode`,
   listBlockedWords: () => apiFetch<string[]>('/api/blocked-words'),
   addBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words?word=${encodeURIComponent(word)}`, { method: 'POST' }),
