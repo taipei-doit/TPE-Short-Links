@@ -83,6 +83,7 @@ def _debug_log(location: str, message: str, data: dict, hypothesis_id: str) -> N
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://admin.url.taipei",
         "https://url-taipei.web.app",
         "https://url-taipei.firebaseapp.com",
         "http://localhost:5173",
