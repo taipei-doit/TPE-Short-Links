@@ -82,7 +82,11 @@ def _debug_log(location: str, message: str, data: dict, hypothesis_id: str) -> N
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://url-taipei.web.app",
+        "https://url-taipei.firebaseapp.com",
+        "http://localhost:5173",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
