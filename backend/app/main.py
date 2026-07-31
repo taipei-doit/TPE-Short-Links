@@ -3,24 +3,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
-import json
-import sys
-from pathlib import Path as FsPath
 from typing import Literal
-
-# #region agent log
-def _agent_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
-    payload = {"sessionId": "863f9a", "location": location, "message": message, "data": data, "hypothesisId": hypothesis_id, "timestamp": int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)}
-    line = json.dumps(payload, default=str) + "\n"
-    try:
-        p = FsPath(__file__).resolve().parents[2] / ".cursor" / "debug-863f9a.log"
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.open("a").write(line)
-    except Exception:
-        pass
-    print(line.strip(), file=sys.stderr, flush=True)
-_agent_log("main.py", "module_load_start", {}, "A")
-# #endregion
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,34 +34,7 @@ from app.utils import (
     validate_original_url,
 )
 
-# #region agent log
-_agent_log("main.py", "imports_done", {}, "A")
-# #endregion
-
 app = FastAPI(title="TPE Short Links")
-
-# #region agent log
-_agent_log("main.py", "FastAPI_app_created", {}, "A")
-# #endregion
-
-# #region agent log
-_DEBUG_LOG_PATH = FsPath(__file__).resolve().parents[2] / ".cursor" / "debug-1c1ee1.log"
-
-def _debug_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
-    try:
-        payload = {
-            "sessionId": "1c1ee1",
-            "timestamp": int(dt.datetime.now(dt.UTC).timestamp() * 1000),
-            "location": location,
-            "message": message,
-            "data": data,
-            "hypothesisId": hypothesis_id,
-        }
-        with open(_DEBUG_LOG_PATH, "a") as f:
-            f.write(json.dumps(payload, default=str) + "\n")
-    except Exception:
-        pass
-# #endregion
 
 app.add_middleware(
     CORSMiddleware,

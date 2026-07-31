@@ -74,72 +74,23 @@ export const api = {
     const { getFunctions, httpsCallable } = await import('firebase/functions');
     const fn = getFunctions(auth.app);
     const list = httpsCallable<{ idToken?: string }, { emails: string[] }>(fn, 'listAdmins');
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H1',location:'api/client.ts:listAdmins:start',message:'Calling listAdmins',data:{firebaseProjectId:(auth.app.options as any)?.projectId ?? null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    try {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
-      const res = await list(idToken ? { idToken } : {});
-      const emails = Array.isArray(res.data?.emails) ? res.data.emails : [];
-      const domains = emails
-        .map((e) => (typeof e === 'string' && e.includes('@') ? e.split('@')[1] : ''))
-        .filter(Boolean);
-      const domainCounts = domains.reduce<Record<string, number>>((acc, d) => {
-        acc[d] = (acc[d] ?? 0) + 1;
-        return acc;
-      }, {});
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H2',location:'api/client.ts:listAdmins:success',message:'listAdmins returned',data:{count:emails.length,domainCounts},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return emails;
-    } catch (e: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H1',location:'api/client.ts:listAdmins:error',message:'listAdmins threw',data:{name:e?.name ?? null,code:e?.code ?? null,message:typeof e?.message==='string'?e.message:String(e)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      throw e;
-    }
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
+    const res = await list(idToken ? { idToken } : {});
+    return Array.isArray(res.data?.emails) ? res.data.emails : [];
   },
   addAdmin: async (email: string): Promise<void> => {
     const { getFunctions, httpsCallable } = await import('firebase/functions');
     const fn = getFunctions(auth.app);
     const add = httpsCallable<{ email: string; idToken?: string }, { email: string }>(fn, 'addAdmin');
-    const domain = typeof email === 'string' && email.includes('@') ? email.split('@')[1] : null;
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H3',location:'api/client.ts:addAdmin:start',message:'Calling addAdmin',data:{emailDomain:domain},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    try {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
-      await add(idToken ? { email, idToken } : { email });
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H3',location:'api/client.ts:addAdmin:success',message:'addAdmin success',data:{emailDomain:domain},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-    } catch (e: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H3',location:'api/client.ts:addAdmin:error',message:'addAdmin threw',data:{name:e?.name ?? null,code:e?.code ?? null,message:typeof e?.message==='string'?e.message:String(e)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      throw e;
-    }
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
+    await add(idToken ? { email, idToken } : { email });
   },
   removeAdmin: async (email: string): Promise<void> => {
     const { getFunctions, httpsCallable } = await import('firebase/functions');
     const fn = getFunctions(auth.app);
     const remove = httpsCallable<{ email: string; idToken?: string }, { email: string }>(fn, 'removeAdmin');
-    const domain = typeof email === 'string' && email.includes('@') ? email.split('@')[1] : null;
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H4',location:'api/client.ts:removeAdmin:start',message:'Calling removeAdmin',data:{emailDomain:domain},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    try {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
-      await remove(idToken ? { email, idToken } : { email });
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H4',location:'api/client.ts:removeAdmin:success',message:'removeAdmin success',data:{emailDomain:domain},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-    } catch (e: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H4',location:'api/client.ts:removeAdmin:error',message:'removeAdmin threw',data:{name:e?.name ?? null,code:e?.code ?? null,message:typeof e?.message==='string'?e.message:String(e)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      throw e;
-    }
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
+    await remove(idToken ? { email, idToken } : { email });
   },
 };
 

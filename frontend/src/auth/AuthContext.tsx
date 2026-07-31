@@ -31,10 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // #region agent log
-  fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H5',location:'auth/AuthContext.tsx:mount',message:'AuthProvider mounted',data:{firebaseProjectId:(auth.app.options as any)?.projectId ?? null,firebaseAuthDomain:(auth.app.options as any)?.authDomain ?? null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-
   // Complete sign-in when user lands on the app via the magic link
   useEffect(() => {
     if (!auth || !window.location.href) {
@@ -56,17 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       try {
         await signInWithEmailLink(auth, email, window.location.href);
-        // #region agent log
-        fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H5',location:'auth/AuthContext.tsx:signInWithEmailLink:success',message:'signInWithEmailLink success',data:{},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         window.localStorage.removeItem(EMAIL_FOR_SIGN_IN_KEY);
         // Remove the link params from URL so refreshing doesn't re-trigger
         window.history.replaceState({}, document.title, window.location.pathname || '/');
       } catch (err) {
         console.error('Sign-in from link failed:', err);
-        // #region agent log
-        fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H5',location:'auth/AuthContext.tsx:signInWithEmailLink:error',message:'signInWithEmailLink error',data:{name:(err as any)?.name ?? null,code:(err as any)?.code ?? null,message:typeof (err as any)?.message==='string'?(err as any).message:String(err)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       } finally {
         setLoading(false);
       }
@@ -79,10 +69,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsub = auth.onAuthStateChanged((u) => {
       setUser(u);
       setLoading(false);
-      const domain = u?.email && u.email.includes('@') ? u.email.split('@')[1] : null;
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/8f8a3f0e-1f4c-4e1e-9e8e-8bee3dcb50dc',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1c1ee1'},body:JSON.stringify({sessionId:'1c1ee1',runId:'admins-debug',hypothesisId:'H5',location:'auth/AuthContext.tsx:onAuthStateChanged',message:'Auth state changed',data:{userPresent:!!u,emailDomain:domain,providerCount:Array.isArray(u?.providerData)?u.providerData.length:null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     });
     return () => unsub();
   }, []);
