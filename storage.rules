@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// 用戶端一律禁止存取 Cloud Storage。
+//
+// 先前規則為 `allow read, write: if true`，等同全網際網路皆可讀取、上傳、
+// 覆寫、刪除儲存桶內所有檔案（其中包含民眾送件文件）。故改為預設拒絕。
+//
+// 短網址服務不使用 Cloud Storage；伺服器端（服務帳戶、Admin SDK、gcloud）
+// 以 IAM 存取，不受本規則限制。
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

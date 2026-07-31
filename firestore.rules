@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// 用戶端一律禁止存取 Firestore。
+//
+// 本專案（doit-dic-itteam）的 Firestore 由多個系統共用，先前規則為
+// `allow read, write: if request.auth != null`，等同「任何註冊帳號皆可讀寫全部資料」；
+// 由於 Firebase Auth 開放自助註冊，任何人都能註冊後把自己寫入 admin_emails
+// 白名單，進而取得短網址服務的管理權限。故改為預設拒絕。
+//
+// 短網址服務不需要用戶端存取 Firestore：
+//   - 後端 Cloud Run 以服務帳戶（IAM）存取
+//   - Cloud Functions 以 Admin SDK 存取
+// 兩者皆不受本規則限制，功能不受影響。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
