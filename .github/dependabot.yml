@@ -1,0 +1,58 @@
+version: 2
+
+updates:
+  # 前端（React / Vite）
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    commit-message:
+      prefix: "deps(frontend)"
+    groups:
+      # 把例行的小升級併成一個 PR，避免每週塞滿待審清單
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # Firebase Functions
+  - package-ecosystem: npm
+    directory: /functions
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    labels: [dependencies, functions]
+    commit-message:
+      prefix: "deps(functions)"
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # 後端（FastAPI / Python）
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Taipei
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+    commit-message:
+      prefix: "deps(backend)"
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # GitHub Actions 本身的版本
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies, ci]
