@@ -1,3 +1,9 @@
+export type Admin = {
+  email: string;
+  name: string;
+  title: string;
+};
+
 export type Tag = {
   id: number;
   name: string;

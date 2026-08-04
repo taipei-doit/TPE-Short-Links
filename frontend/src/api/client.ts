@@ -1,4 +1,4 @@
-import type { CreateLinkIn, Link, LinkList, Tag } from './types';
+import type { Admin, CreateLinkIn, Link, LinkList, Tag } from './types';
 import { auth } from '../firebase';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000';
@@ -123,20 +123,30 @@ export const api = {
   createTag: (name: string) => apiFetch<Tag>(`/api/tags?name=${encodeURIComponent(name)}`, { method: 'POST' }),
   deleteTag: (tagId: number) => apiFetch<{ message: string; tag_id: number }>(`/api/tags/${tagId}`, { method: 'DELETE' }),
 
-  listAdmins: async (): Promise<string[]> => {
+  listAdmins: async (): Promise<Admin[]> => {
     const { getFunctions, httpsCallable } = await import('firebase/functions');
     const fn = getFunctions(auth.app);
-    const list = httpsCallable<{ idToken?: string }, { emails: string[] }>(fn, 'listAdmins');
+    const list = httpsCallable<{ idToken?: string }, { admins?: Admin[]; emails?: string[] }>(fn, 'listAdmins');
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
     const res = await list(idToken ? { idToken } : {});
-    return Array.isArray(res.data?.emails) ? res.data.emails : [];
+
+    if (Array.isArray(res.data?.admins)) {
+      return res.data.admins.map((a) => ({
+        email: a.email,
+        name: a.name ?? '',
+        title: a.title ?? '',
+      }));
+    }
+    // Fallback if the deployed function still returns only emails.
+    return (res.data?.emails ?? []).map((email) => ({ email, name: '', title: '' }));
   },
-  addAdmin: async (email: string): Promise<void> => {
+  /** Create or update an admin (upsert by email). */
+  saveAdmin: async (adminUser: Admin): Promise<void> => {
     const { getFunctions, httpsCallable } = await import('firebase/functions');
     const fn = getFunctions(auth.app);
-    const add = httpsCallable<{ email: string; idToken?: string }, { email: string }>(fn, 'addAdmin');
+    const save = httpsCallable<Admin & { idToken?: string }, { email: string }>(fn, 'addAdmin');
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
-    await add(idToken ? { email, idToken } : { email });
+    await save(idToken ? { ...adminUser, idToken } : adminUser);
   },
   removeAdmin: async (email: string): Promise<void> => {
     const { getFunctions, httpsCallable } = await import('firebase/functions');

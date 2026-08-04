@@ -14,6 +14,11 @@ function normalizeEmail(email) {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
 }
 
+/** Trim a free-text profile field (name / job title) and cap its length. */
+function normalizeProfileField(value) {
+  return typeof value === 'string' ? value.trim().slice(0, 100) : '';
+}
+
 /**
  * Admin whitelist: from Firestore collection admin_emails (doc id = email).
  * If Firestore has no docs, fall back to env ADMIN_WHITELIST.
@@ -235,27 +240,51 @@ async function requireAdmin(context, data) {
   return email;
 }
 
-/** List all admin emails. Caller must be an admin. */
+/** List all admins (email, name, title). Caller must be an admin. */
 exports.listAdmins = functions.https.onCall(async (data, context) => {
   await requireAdmin(context, data);
   const db = admin.firestore();
   const snapshot = await db.collection(ADMIN_EMAILS_COLLECTION).get();
-  const emails = snapshot.docs.map((d) => d.id).sort();
-  return { emails };
+  const admins = snapshot.docs
+    .map((d) => {
+      const v = d.data() || {};
+      return {
+        email: d.id,
+        name: normalizeProfileField(v.name),
+        title: normalizeProfileField(v.title),
+      };
+    })
+    .sort((a, b) => a.email.localeCompare(b.email));
+  // `emails` is kept so a client running the previous build keeps working
+  // while the new frontend rolls out.
+  return { admins, emails: admins.map((a) => a.email) };
 });
 
-/** Add an admin email. Caller must be an admin. */
+/**
+ * Add or update an admin (email + name + job title). Caller must be an admin.
+ * Acts as an upsert: calling it with an existing email updates that admin's
+ * name/title, which is also how pre-existing admins get their profile filled in.
+ */
 exports.addAdmin = functions.https.onCall(async (data, context) => {
   await requireAdmin(context, data);
-  const rawEmail = data?.email ?? data?.data?.email;
-  const email = normalizeEmail(rawEmail);
+  const payload = (data && typeof data.data === 'object' && data.data) || data || {};
+  const email = normalizeEmail(payload.email);
   if (!email) {
     throw new functions.https.HttpsError('invalid-argument', 'Email is required');
   }
+  const name = normalizeProfileField(payload.name);
+  const title = normalizeProfileField(payload.title);
+
   const db = admin.firestore();
   const ref = db.collection(ADMIN_EMAILS_COLLECTION).doc(email);
-  await ref.set({ email, createdAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-  return { email };
+  const existing = await ref.get();
+
+  const update = { email, name, title, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+  if (!existing.exists) {
+    update.createdAt = admin.firestore.FieldValue.serverTimestamp();
+  }
+  await ref.set(update, { merge: true });
+  return { email, name, title };
 });
 
 /** Remove an admin email. Caller must be an admin. Cannot remove self; cannot remove last admin. */
