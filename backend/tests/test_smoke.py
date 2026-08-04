@@ -119,6 +119,21 @@ def test_duplicate_url_blocked_then_allowed_after_disable(client: TestClient):
     assert created["code"] == "H124"
 
 
+def test_export_csv_starts_with_bom_and_lists_links(client: TestClient):
+    create_link(client, "https://example.com/csv", code="J123")
+
+    res = client.get("/api/links/export?status=all")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/csv")
+    assert 'filename="short_links.csv"' in res.headers["content-disposition"]
+
+    body = res.content.decode("utf-8")
+    # Excel on Windows needs the BOM to detect UTF-8 (Chinese tags/notes).
+    assert body.startswith("﻿")
+    assert "code,short_url" in body
+    assert "J123" in body
+
+
 def test_code_never_reused_even_after_disable(client: TestClient):
     create_link(client, "https://example.com/i", code="I123")
     client.post("/api/links/I123/disable")

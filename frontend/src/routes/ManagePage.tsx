@@ -20,7 +20,7 @@ import { IconBan, IconCalendar, IconCheck, IconPencil, IconRefresh } from '@tabl
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 
-import { API_BASE_URL, api } from '../api/client';
+import { api } from '../api/client';
 import type { Link, Tag } from '../api/types';
 
 type StatusFilter = 'active' | 'disabled' | 'expired' | 'all';
@@ -273,19 +273,21 @@ export function ManagePage() {
     });
   }
 
-  function exportCsv() {
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv() {
+    setExporting(true);
     try {
-      const sp = new URLSearchParams();
-      const trimmedQuery = query.trim();
-      if (trimmedQuery) sp.set('query', trimmedQuery);
-      if (tagId) sp.set('tag_id', String(Number(tagId)));
-      if (status) sp.set('status', status);
-      const qs = sp.toString();
-      const url = `${API_BASE_URL}/api/links/export${qs ? `?${qs}` : ''}`;
-      window.open(url, '_blank');
+      await api.exportLinksCsv({
+        query: query.trim() || undefined,
+        tag_id: tagId ? Number(tagId) : undefined,
+        status,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : '匯出失敗';
       notifications.show({ color: 'red', message: msg });
+    } finally {
+      setExporting(false);
     }
   }
   async function confirmDisable(code: string) {
@@ -333,7 +335,7 @@ export function ManagePage() {
           >
             重新整理
           </Button>
-          <Button variant="outline" size="md" radius="md" onClick={exportCsv}>
+          <Button variant="outline" size="md" radius="md" loading={exporting} onClick={exportCsv}>
             匯出 CSV
           </Button>
         </Group>

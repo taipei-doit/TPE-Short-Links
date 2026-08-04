@@ -26,6 +26,7 @@ export function CreatePage() {
   const [useManualCode, setUseManualCode] = useState(false);
 
   const [result, setResult] = useState<Link | null>(null);
+  const [downloadingQr, setDownloadingQr] = useState(false);
 
   useEffect(() => {
     api
@@ -306,9 +307,18 @@ export function CreatePage() {
               <Button
                 variant="outline"
                 leftSection={<IconQrcode size={18} />}
-                component="a"
-                href={api.getQrCodeUrl(result.code)}
-                download={`qrcode_${result.code}.png`}
+                loading={downloadingQr}
+                onClick={async () => {
+                  setDownloadingQr(true);
+                  try {
+                    await api.downloadQrCode(result.code);
+                  } catch (e) {
+                    const msg = e instanceof Error ? e.message : 'QR Code 下載失敗';
+                    notifications.show({ color: 'red', message: msg });
+                  } finally {
+                    setDownloadingQr(false);
+                  }
+                }}
                 size="md"
                 radius="md"
               >

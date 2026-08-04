@@ -375,7 +375,9 @@ def export_links_csv(
             ]
         )
 
-    content = output.getvalue()
+    # Prepend a UTF-8 BOM so Excel on Windows detects the encoding and shows
+    # Chinese tags/notes correctly instead of mojibake.
+    content = "\ufeff" + output.getvalue()
     return Response(
         content=content,
         media_type="text/csv; charset=utf-8",

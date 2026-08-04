@@ -31,6 +31,46 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Download a file from an authenticated endpoint.
+ *
+ * These endpoints require an Authorization header, so they cannot be opened
+ * directly via window.open()/<a href> — the browser would send no token and
+ * get a 401. Fetch the bytes with the header, then save them from memory.
+ */
+async function downloadFile(path: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (auth.currentUser) {
+    const token = await auth.currentUser.getIdToken();
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API_BASE_URL}${path}`, { headers });
+
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const data = (await res.json()) as { detail?: unknown };
+      if (typeof data.detail === 'string') detail = data.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export const api = {
   getTags: () => apiFetch<Tag[]>('/api/tags'),
   createLink: (payload: CreateLinkIn) =>
@@ -63,7 +103,20 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ original_url }),
     }),
-  getQrCodeUrl: (code: string) => `${API_BASE_URL}/api/links/${code}/qrcode`,
+  exportLinksCsv: (params: {
+    query?: string;
+    tag_id?: number;
+    status?: 'active' | 'disabled' | 'expired' | 'all';
+  }) => {
+    const sp = new URLSearchParams();
+    if (params.query) sp.set('query', params.query);
+    if (params.tag_id) sp.set('tag_id', String(params.tag_id));
+    if (params.status) sp.set('status', params.status);
+    const qs = sp.toString();
+    return downloadFile(`/api/links/export${qs ? `?${qs}` : ''}`, 'short_links.csv');
+  },
+  downloadQrCode: (code: string) =>
+    downloadFile(`/api/links/${encodeURIComponent(code)}/qrcode`, `qrcode_${code}.png`),
   listBlockedWords: () => apiFetch<string[]>('/api/blocked-words'),
   addBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words?word=${encodeURIComponent(word)}`, { method: 'POST' }),
   deleteBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),
