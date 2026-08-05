@@ -2,8 +2,8 @@
 
 臺北市政府內部使用的短網址服務。
 
-- **民眾端（轉址）**：`https://url.taipei/{代碼}` → 302 轉址至原始網址
-- **管理介面**：網址不對外公開，請向團隊索取（管理員以電子郵件魔術連結登入）
+- **轉址**：`https://url.taipei/{代碼}` → 302 轉址至原始網址
+
 
 ## 系統架構
 
@@ -13,8 +13,6 @@
 | 管理介面 | React / Vite / Mantine | Firebase Hosting |
 | 資料庫 | PostgreSQL | Cloud SQL `tpe-shortlinks-db`（asia-east1） |
 | 登入寄信 | Firebase Functions | `sendAdminLoginLink` 等（`functions/index.js`） |
-
-GCP／Firebase 專案：`doit-dic-itteam`
 
 ## 功能與規則
 
