@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
@@ -56,7 +56,7 @@ def test_is_admin_email_env_fallback(monkeypatch):
 
 
 def test_whitelisted_user_passes(monkeypatch):
-    monkeypatch.setattr(auth_mod, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(auth_mod, "get_settings", _Settings)
     monkeypatch.setattr(auth_mod, "_firestore_client", _FakeFirestore({"admin@gov.taipei"}))
     monkeypatch.setattr(
         auth_mod.id_token,
@@ -68,7 +68,7 @@ def test_whitelisted_user_passes(monkeypatch):
 
 
 def test_valid_token_but_not_whitelisted_is_403(monkeypatch):
-    monkeypatch.setattr(auth_mod, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(auth_mod, "get_settings", _Settings)
     monkeypatch.setattr(auth_mod, "_firestore_client", _FakeFirestore({"admin@gov.taipei"}))
     monkeypatch.setattr(
         auth_mod.id_token,
@@ -81,7 +81,7 @@ def test_valid_token_but_not_whitelisted_is_403(monkeypatch):
 
 
 def test_unverified_email_is_401(monkeypatch):
-    monkeypatch.setattr(auth_mod, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(auth_mod, "get_settings", _Settings)
     monkeypatch.setattr(
         auth_mod.id_token,
         "verify_firebase_token",
@@ -97,7 +97,7 @@ def test_whitelist_unavailable_fails_closed(monkeypatch):
         def collection(self, _name):
             raise RuntimeError("firestore down")
 
-    monkeypatch.setattr(auth_mod, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(auth_mod, "get_settings", _Settings)
     monkeypatch.setattr(auth_mod, "_firestore_client", _Boom())
     monkeypatch.setattr(
         auth_mod.id_token,

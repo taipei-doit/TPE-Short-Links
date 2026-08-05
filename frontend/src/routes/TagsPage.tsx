@@ -166,7 +166,15 @@ export function TagsPage() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {tags.length === 0 ? (
+            {loading ? (
+              <Table.Tr>
+                <Table.Td colSpan={3}>
+                  <Text c="dimmed" size="sm" ta="center" py="xl">
+                    載入中…
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            ) : tags.length === 0 ? (
               <Table.Tr>
                 <Table.Td colSpan={3}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">

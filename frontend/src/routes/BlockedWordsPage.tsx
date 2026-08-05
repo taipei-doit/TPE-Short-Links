@@ -152,7 +152,15 @@ export function BlockedWordsPage() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {words.length === 0 ? (
+            {loading ? (
+              <Table.Tr>
+                <Table.Td colSpan={3}>
+                  <Text c="dimmed" size="sm" ta="center" py="xl">
+                    載入中…
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            ) : words.length === 0 ? (
               <Table.Tr>
                 <Table.Td colSpan={3}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">

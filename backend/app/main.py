@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import logging
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Response
@@ -27,7 +28,6 @@ from app.schemas import (
 from app.settings import get_settings
 from app.utils import (
     generate_code,
-    is_english_word,
     load_seed_tags,
     now_utc,
     validate_expires_at,
@@ -102,7 +102,6 @@ def sync_seed_tags(db: Session) -> None:
         try:
             db.commit()
         except Exception as e:
-            import logging
             logging.error(f"Error committing tags: {e}")
             db.rollback()
             raise
@@ -135,21 +134,22 @@ def get_tags(
 ) -> list[TagOut]:
     try:
         # Clear cache to ensure fresh load
-        from app.utils import load_seed_tags
         load_seed_tags.cache_clear()
-        
+
         sync_seed_tags(db)
         rows = db.execute(select(Tag).where(Tag.is_active == True).order_by(Tag.name.asc())).scalars().all()  # noqa: E712
         return [TagOut(id=t.id, name=t.name, is_active=t.is_active) for t in rows]
     except Exception as e:
         # Log error but don't fail - return empty list if sync fails
-        import logging
         logging.error(f"Error syncing tags: {e}", exc_info=True)
         # Try to return existing tags even if sync failed
         try:
             rows = db.execute(select(Tag).where(Tag.is_active == True).order_by(Tag.name.asc())).scalars().all()  # noqa: E712
             return [TagOut(id=t.id, name=t.name, is_active=t.is_active) for t in rows]
-        except:
+        except Exception:
+            # Catch Exception (not BaseException) so KeyboardInterrupt/SystemExit
+            # still propagate instead of being swallowed here.
+            logging.exception("Falling back to an empty tag list")
             return []
 
 

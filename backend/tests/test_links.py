@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import datetime as dt
 
-import pytest
-
 
 def test_create_rejects_http_by_default(client, monkeypatch):
     monkeypatch.setenv("ALLOW_HTTP_URLS", "false")
