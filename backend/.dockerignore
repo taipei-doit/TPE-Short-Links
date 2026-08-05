@@ -2,5 +2,6 @@
 __pycache__
 .pytest_cache
 tests
-migrations
 .env
+.env.production
+scripts/admins_export*.json

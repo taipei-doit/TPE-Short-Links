@@ -2,7 +2,23 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, EmailStr, Field, HttpUrl
+
+
+class AdminOut(BaseModel):
+    email: str
+    name: str
+    title: str
+
+
+class AdminIn(BaseModel):
+    email: EmailStr
+    name: str = Field(default="", max_length=100)
+    title: str = Field(default="", max_length=100)
+
+
+class WhitelistCheckIn(BaseModel):
+    email: EmailStr
 
 
 class TagOut(BaseModel):

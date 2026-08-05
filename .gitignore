@@ -45,5 +45,8 @@ pgdata/
 functions/.env
 functions/config.secret.js
 
+# Admin whitelist exports (contain staff email addresses; this repo is public)
+backend/scripts/admins_export*.json
+
 # Cursor
 .cursor/

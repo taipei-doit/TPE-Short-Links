@@ -4,19 +4,22 @@ import csv
 import datetime as dt
 import io
 import logging
+import secrets
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Path, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import get_firebase_user
+from app.auth import get_firebase_user, invalidate_admin_cache
 from app.db.session import get_db
-from app.models import BlockedWord, ReservedCode, ShortLink, Tag
+from app.models import AdminUser, BlockedWord, ReservedCode, ShortLink, Tag
 from app.schemas import (
+    AdminIn,
+    AdminOut,
     DisableOut,
     EnableOut,
     LinkCreateIn,
@@ -24,6 +27,7 @@ from app.schemas import (
     LinkOut,
     LinkUpdateIn,
     TagOut,
+    WhitelistCheckIn,
 )
 from app.settings import get_settings
 from app.utils import (
@@ -472,6 +476,92 @@ def delete_blocked_word(
     db.commit()
 
     return {"message": "Word removed", "word": word_lower}
+
+
+@app.post("/api/internal/whitelist-check")
+def internal_whitelist_check(
+    request: Request,
+    payload: WhitelistCheckIn,
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """Whitelist lookup for the magic-link sender (Cloud Function).
+
+    That function runs before anyone is signed in, so it cannot present an ID
+    token; it authenticates with a shared secret instead. Only ever returns a
+    boolean, so the whitelist itself is never exposed.
+    """
+    settings = get_settings()
+    expected = settings.INTERNAL_API_TOKEN
+    if not expected:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    provided = request.headers.get("X-Internal-Token", "")
+    if not secrets.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Invalid internal token")
+
+    email = str(payload.email).strip().lower()
+    exists = db.execute(select(AdminUser.email).where(AdminUser.email == email)).first() is not None
+    return {"allowed": exists}
+
+
+@app.get("/api/admins", response_model=list[AdminOut])
+def list_admins(
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> list[AdminOut]:
+    rows = db.execute(select(AdminUser).order_by(AdminUser.email.asc())).scalars().all()
+    return [AdminOut(email=a.email, name=a.name, title=a.title) for a in rows]
+
+
+@app.post("/api/admins", response_model=AdminOut)
+def upsert_admin(
+    payload: AdminIn,
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> AdminOut:
+    """Create an admin, or update an existing one's name/title."""
+    email = str(payload.email).strip().lower()
+    name = payload.name.strip()
+    title = payload.title.strip()
+
+    existing = db.get(AdminUser, email)
+    if existing is None:
+        db.add(AdminUser(email=email, name=name, title=title))
+    else:
+        existing.name = name
+        existing.title = title
+        existing.updated_at = now_utc()
+    db.commit()
+
+    invalidate_admin_cache(email)
+    return AdminOut(email=email, name=name, title=title)
+
+
+@app.delete("/api/admins/{email}")
+def delete_admin(
+    email: str = Path(..., min_length=3, max_length=320),
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> dict[str, str]:
+    """Remove an admin. Refuses to remove yourself or the last remaining admin."""
+    target = email.strip().lower()
+    caller = str(_auth.get("email") or "").strip().lower()
+
+    admin_user = db.get(AdminUser, target)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin not found")
+    if caller and target == caller:
+        raise HTTPException(status_code=422, detail="Cannot remove yourself")
+
+    total = db.execute(select(func.count()).select_from(AdminUser)).scalar_one()
+    if total <= 1:
+        raise HTTPException(status_code=422, detail="Cannot remove the last admin")
+
+    db.delete(admin_user)
+    db.commit()
+
+    invalidate_admin_cache(target)
+    return {"message": "Admin removed", "email": target}
 
 
 @app.post("/api/tags", response_model=TagOut)

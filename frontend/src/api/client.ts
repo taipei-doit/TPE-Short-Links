@@ -123,38 +123,16 @@ export const api = {
   createTag: (name: string) => apiFetch<Tag>(`/api/tags?name=${encodeURIComponent(name)}`, { method: 'POST' }),
   deleteTag: (tagId: number) => apiFetch<{ message: string; tag_id: number }>(`/api/tags/${tagId}`, { method: 'DELETE' }),
 
-  listAdmins: async (): Promise<Admin[]> => {
-    const { getFunctions, httpsCallable } = await import('firebase/functions');
-    const fn = getFunctions(auth.app);
-    const list = httpsCallable<{ idToken?: string }, { admins?: Admin[]; emails?: string[] }>(fn, 'listAdmins');
-    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
-    const res = await list(idToken ? { idToken } : {});
-
-    if (Array.isArray(res.data?.admins)) {
-      return res.data.admins.map((a) => ({
-        email: a.email,
-        name: a.name ?? '',
-        title: a.title ?? '',
-      }));
-    }
-    // Fallback if the deployed function still returns only emails.
-    return (res.data?.emails ?? []).map((email) => ({ email, name: '', title: '' }));
-  },
-  /** Create or update an admin (upsert by email). */
-  saveAdmin: async (adminUser: Admin): Promise<void> => {
-    const { getFunctions, httpsCallable } = await import('firebase/functions');
-    const fn = getFunctions(auth.app);
-    const save = httpsCallable<Admin & { idToken?: string }, { email: string }>(fn, 'addAdmin');
-    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
-    await save(idToken ? { ...adminUser, idToken } : adminUser);
-  },
-  removeAdmin: async (email: string): Promise<void> => {
-    const { getFunctions, httpsCallable } = await import('firebase/functions');
-    const fn = getFunctions(auth.app);
-    const remove = httpsCallable<{ email: string; idToken?: string }, { email: string }>(fn, 'removeAdmin');
-    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : undefined;
-    await remove(idToken ? { email, idToken } : { email });
-  },
+  // Admins live in the application database and are served by the backend API.
+  // (They used to be Cloud Functions backed by Firestore.)
+  listAdmins: () => apiFetch<Admin[]>('/api/admins'),
+  /** Create an admin, or update an existing one's name/title. */
+  saveAdmin: (adminUser: Admin) =>
+    apiFetch<Admin>('/api/admins', { method: 'POST', body: JSON.stringify(adminUser) }),
+  removeAdmin: (email: string) =>
+    apiFetch<{ message: string; email: string }>(`/api/admins/${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+    }),
 };
 
 export { API_BASE_URL };

@@ -50,3 +50,19 @@ class BlockedWord(Base):
 
     word: Mapped[str] = mapped_column(String(4), primary_key=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class AdminUser(Base):
+    """Admin whitelist: the single source of truth for who may use /api/*.
+
+    Previously stored in Firestore; moved here so the service depends on one
+    datastore only (and to keep the system portable off GCP).
+    """
+
+    __tablename__ = "admin_users"
+
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, server_default="")
+    title: Mapped[str] = mapped_column(String(100), nullable=False, server_default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

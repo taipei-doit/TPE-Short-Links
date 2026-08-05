@@ -7,6 +7,7 @@ alembic==1.14.1
 psycopg[binary]==3.2.4
 pg8000==1.31.5
 pydantic==2.10.6
+email-validator>=2.2.0
 pydantic-settings==2.7.1
 python-dateutil==2.9.0.post0
 qrcode[pil]>=7.0

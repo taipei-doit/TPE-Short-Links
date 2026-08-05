@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     #   for backend ID token verification.
     FIREBASE_PROJECT_ID: str = ""
     FIREBASE_APP_ID: str = ""
+    # Shared secret used by the magic-link Cloud Function to ask this service
+    # whether an email is whitelisted. Empty disables the internal endpoint.
+    INTERNAL_API_TOKEN: str = ""
 
     def reserved_codes_set(self) -> set[str]:
         raw = (self.RESERVED_CODES or "").strip()

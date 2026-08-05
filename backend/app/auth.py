@@ -16,19 +16,20 @@ from typing import Any
 from fastapi import HTTPException, Request
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from sqlalchemy import select
 
 from app.settings import get_settings
 
-# Admin whitelist lives in Firestore collection `admin_emails` (doc id = email),
-# the same source the Firebase Functions use for magic-link sending. Verifying a
-# Firebase ID token alone is NOT enough: with the public web apiKey anyone may be
-# able to self-provision an account in this project, so every /api/* request must
-# also prove the signed-in email is a whitelisted admin.
-ADMIN_EMAILS_COLLECTION = "admin_emails"
+# Verifying a Firebase ID token alone is NOT enough: with the public web apiKey
+# anyone may be able to self-provision an account in this project, so every
+# /api/* request must also prove the signed-in email is a whitelisted admin.
+#
+# The whitelist lives in the `admin_users` table (it used to live in Firestore).
+# Keeping it in the application database means one datastore, one backup, and no
+# GCP-specific dependency in the request path.
 _ADMIN_CACHE_TTL_SECONDS = 60.0
 
 _admin_cache: dict[str, tuple[bool, float]] = {}
-_firestore_client: Any = None
 
 
 def _env_whitelist() -> set[str]:
@@ -37,24 +38,39 @@ def _env_whitelist() -> set[str]:
 
 
 def is_admin_email(email: str) -> bool:
-    """Return True if the email is a whitelisted admin (Firestore, env fallback)."""
+    """Return True if the email is a whitelisted admin.
+
+    Reads `admin_users`; `ADMIN_WHITELIST` is only consulted when that table is
+    empty, so a freshly provisioned database still has a way in.
+    """
     now = time.monotonic()
     cached = _admin_cache.get(email)
     if cached is not None and now - cached[1] < _ADMIN_CACHE_TTL_SECONDS:
         return cached[0]
 
-    global _firestore_client
-    if _firestore_client is None:
-        from google.cloud import firestore  # Lazy import: not needed in local dev/tests
+    # Imported here so importing this module does not require the DB layer
+    # (tests patch `is_admin_email` directly).
+    from app.db.session import get_engine
+    from app.models import AdminUser
+    from sqlalchemy.orm import Session
 
-        _firestore_client = firestore.Client()
-
-    ok = _firestore_client.collection(ADMIN_EMAILS_COLLECTION).document(email).get().exists
-    if not ok:
-        ok = email in _env_whitelist()
+    with Session(get_engine()) as db:
+        ok = db.execute(select(AdminUser.email).where(AdminUser.email == email)).first() is not None
+        if not ok:
+            has_any = db.execute(select(AdminUser.email).limit(1)).first() is not None
+            if not has_any:
+                ok = email in _env_whitelist()
 
     _admin_cache[email] = (ok, now)
     return ok
+
+
+def invalidate_admin_cache(email: str | None = None) -> None:
+    """Drop cached whitelist decisions so admin changes take effect immediately."""
+    if email is None:
+        _admin_cache.clear()
+    else:
+        _admin_cache.pop(email, None)
 
 
 def get_firebase_user(
