@@ -27,6 +27,11 @@ from app.settings import get_settings
 # down, small enough that many concurrent downloads do not blow up memory.
 CHUNK_SIZE = 256 * 1024
 
+# How much of a GCS object to hold in memory at once. Left to itself the client
+# buffers 40 MiB per reader, which several concurrent large downloads would turn
+# into an out-of-memory kill on a small container. Must be a multiple of 256 KiB.
+GCS_READ_BUFFER = 8 * 1024 * 1024
+
 
 class Storage(Protocol):
     def save(self, path: str, source: BinaryIO, content_type: str) -> None: ...
@@ -113,7 +118,7 @@ class GcsStorage:
 
     def stream(self, path: str) -> Iterator[bytes]:
         blob = self._get_bucket().blob(path)
-        with blob.open("rb") as fh:
+        with blob.open("rb", chunk_size=GCS_READ_BUFFER) as fh:
             while chunk := fh.read(CHUNK_SIZE):
                 yield chunk
 

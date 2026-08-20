@@ -81,6 +81,14 @@ _UNSAFE_FILENAME_CHARS = re.compile(r'[\x00-\x1f\x7f"\\/:*?<>|]')
 
 _ephemeral_secret: bytes | None = None
 
+# Cloud Run caps a fixed-length response at 32 MiB. A response only escapes
+# that cap if it goes out chunked, and it only goes out chunked if it carries
+# no Content-Length. So anything near the cap has to give up its Content-Length
+# -- and with it the browser's download percentage. Below the threshold we keep
+# the header, because most files are small and the progress bar is worth having.
+# Measured: a 29,110,560-byte response succeeded, larger ones returned 500.
+RESPONSE_LENGTH_LIMIT = 30 * 1024 * 1024
+
 
 # --------------------------------------------------------------------------
 # Signed tokens
@@ -1216,13 +1224,18 @@ def download_shared_file(
     content_type = record.content_type
     size_bytes = record.size_bytes
 
+    headers = {
+        "Content-Disposition": content_disposition(filename),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    # See RESPONSE_LENGTH_LIMIT: declaring a length turns this into a
+    # fixed-length response, which Cloud Run refuses above 32 MiB.
+    if size_bytes <= RESPONSE_LENGTH_LIMIT:
+        headers["Content-Length"] = str(size_bytes)
+
     return StreamingResponse(
         get_storage().stream(storage_path),
         media_type=content_type,
-        headers={
-            "Content-Disposition": content_disposition(filename),
-            "Content-Length": str(size_bytes),
-            "Cache-Control": "no-store",
-            "X-Content-Type-Options": "nosniff",
-        },
+        headers=headers,
     )

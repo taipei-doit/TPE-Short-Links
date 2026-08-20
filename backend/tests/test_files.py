@@ -251,6 +251,36 @@ def test_correct_pin_yields_working_downloads(files_client):
     assert share["download_count"] == 2
 
 
+def test_large_downloads_omit_content_length(files_client, db_session):
+    """Cloud Run caps a *fixed-length* response at 32 MiB.
+
+    A response escapes that cap only by going out chunked, which only happens
+    when it carries no Content-Length. Declaring one on a large file is what
+    turned real downloads into 500s, so pin the behaviour on both sides of the
+    threshold. The recorded size is edited rather than actually moving 30 MB.
+    """
+    from app.files import RESPONSE_LENGTH_LIMIT
+
+    created = create_share(files_client).json()
+    code = created["code"]
+    add_file(files_client, code, name="small.bin", content=b"s" * 2048)
+    add_file(files_client, code, name="big.bin", content=b"b" * 4096)
+
+    verified = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]}).json()
+    small = files_client.get(verified["files"][0]["download_url"])
+    assert small.status_code == 200
+    assert small.headers["content-length"] == "2048"
+
+    big_record = db_session.query(SharedFile).filter_by(filename="big.bin").one()
+    big_record.size_bytes = RESPONSE_LENGTH_LIMIT + 1
+    db_session.commit()
+
+    big = files_client.get(verified["files"][1]["download_url"])
+    assert big.status_code == 200
+    assert big.content == b"b" * 4096
+    assert "content-length" not in {k.lower() for k in big.headers}
+
+
 def test_pin_check_is_case_insensitive(files_client):
     created = make_share(files_client)
     r = files_client.post(f"/f/{created['code']}/verify", json={"pin": created["pin"].lower()})
