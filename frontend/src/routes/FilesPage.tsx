@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Card,
+  Collapse,
   CopyButton,
   FileInput,
   Group,
@@ -26,23 +27,33 @@ import {
   IconBan,
   IconCalendar,
   IconCheck,
+  IconChevronDown,
+  IconChevronRight,
   IconCopy,
   IconKey,
   IconLock,
+  IconPlus,
   IconRefresh,
   IconTrash,
   IconUpload,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
 import { api } from '../api/client';
-import type { SharedFile } from '../api/types';
+import type { FileShare } from '../api/types';
 
 type StatusFilter = 'active' | 'disabled' | 'expired' | 'deleted' | 'all';
 type ExpiryPreset = '1' | '7' | '30' | 'custom' | 'never';
 
 const PIN_LENGTH = 8;
+
+/**
+ * Mirrors the backend's MAX_FILE_MB. Files above the Cloud Run request limit go
+ * straight to object storage, so this ceiling is about sanity, not plumbing.
+ * The backend stays authoritative.
+ */
+const MAX_FILE_MB = 2048;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -92,19 +103,41 @@ function CopyableField({ label, value, mono }: { label: string; value: string; m
 }
 
 /**
- * Shown right after upload or a PIN regeneration.
+ * Shown right after a share is created or its PIN regenerated.
  *
  * This is the only time the PIN is readable — it is stored hashed, so it can be
  * replaced but never looked up again.
  */
-function ShareResult({ shareUrl, pin, filename }: { shareUrl: string; pin: string; filename?: string }) {
-  const combined = `檔案：${filename ?? ''}\n下載連結：${shareUrl}\nPIN 碼：${pin}`;
+function ShareResult({
+  shareUrl,
+  pin,
+  filenames,
+}: {
+  shareUrl: string;
+  pin: string;
+  filenames?: string[];
+}) {
+  const fileLine = filenames?.length ? `檔案：${filenames.join('、')}\n` : '';
+  const combined = `${fileLine}下載連結：${shareUrl}\nPIN 碼：${pin}`;
   return (
     <Stack gap="lg">
       <Alert color="orange" icon={<IconAlertTriangle size={18} />} title="請立即複製 PIN 碼">
         PIN 碼僅顯示這一次，關閉後就無法再查看。若日後遺失，只能重新產生一組新的 PIN 碼。
       </Alert>
-      {filename && <CopyableField label="檔案名稱" value={filename} />}
+      {filenames && filenames.length > 0 && (
+        <div>
+          <Text size="sm" fw={600} mb={4}>
+            檔案（{filenames.length}）
+          </Text>
+          <Stack gap={2}>
+            {filenames.map((name) => (
+              <Text key={name} size="sm" c="dimmed" style={{ wordBreak: 'break-all' }}>
+                {name}
+              </Text>
+            ))}
+          </Stack>
+        </div>
+      )}
       <CopyableField label="下載連結" value={shareUrl} />
       <CopyableField label="PIN 碼" value={pin} mono />
       <Group justify="space-between">
@@ -126,27 +159,34 @@ function ShareResult({ shareUrl, pin, filename }: { shareUrl: string; pin: strin
   );
 }
 
-function openShareResult(opts: { shareUrl: string; pin: string; filename?: string; title: string }) {
+function openShareResult(opts: {
+  shareUrl: string;
+  pin: string;
+  filenames?: string[];
+  title: string;
+}) {
   modals.open({
     title: opts.title,
     size: 'lg',
     closeOnClickOutside: false,
-    children: <ShareResult shareUrl={opts.shareUrl} pin={opts.pin} filename={opts.filename} />,
+    children: <ShareResult shareUrl={opts.shareUrl} pin={opts.pin} filenames={opts.filenames} />,
   });
 }
 
 function EditForm({
-  file,
+  share,
   onSave,
   onCancel,
 }: {
-  file: SharedFile;
+  share: FileShare;
   onSave: (patch: { expires_at?: string | null; note?: string | null }) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [mode, setMode] = useState<'permanent' | 'datetime'>(file.expires_at ? 'datetime' : 'permanent');
-  const [expiresAt, setExpiresAt] = useState<Date | null>(file.expires_at ? new Date(file.expires_at) : null);
-  const [note, setNote] = useState(file.note ?? '');
+  const [mode, setMode] = useState<'permanent' | 'datetime'>(share.expires_at ? 'datetime' : 'permanent');
+  const [expiresAt, setExpiresAt] = useState<Date | null>(
+    share.expires_at ? new Date(share.expires_at) : null,
+  );
+  const [note, setNote] = useState(share.note ?? '');
   const [saving, setSaving] = useState(false);
 
   return (
@@ -186,27 +226,31 @@ function EditForm({
   );
 }
 
-function statusBadge(f: SharedFile) {
-  if (f.status === 'deleted') return <Badge color="dark">已刪除</Badge>;
-  if (f.status === 'disabled') return <Badge color="gray">已停用</Badge>;
-  if (f.is_expired) return <Badge color="orange">已過期</Badge>;
+function statusBadge(share: FileShare) {
+  if (share.status === 'deleted') return <Badge color="dark">已刪除</Badge>;
+  if (share.status === 'disabled') return <Badge color="gray">已停用</Badge>;
+  if (share.is_expired) return <Badge color="orange">已過期</Badge>;
+  if (share.file_count === 0) return <Badge color="yellow">尚無檔案</Badge>;
   return <Badge color="green">分享中</Badge>;
 }
 
+type UploadState = { name: string; percent: number; done: boolean; error?: string };
+
 export function FilesPage() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState('');
   const [customPin, setCustomPin] = useState('');
   const [expiryPreset, setExpiryPreset] = useState<ExpiryPreset>('7');
   const [customExpiry, setCustomExpiry] = useState<Date | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [uploads, setUploads] = useState<UploadState[]>([]);
 
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
-  const [items, setItems] = useState<SharedFile[]>([]);
+  const [items, setItems] = useState<FileShare[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const limit = 20;
   const [page, setPage] = useState(1);
@@ -215,7 +259,7 @@ export function FilesPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await api.listSharedFiles({
+      const res = await api.listShares({
         query: query.trim() || undefined,
         status,
         limit,
@@ -235,6 +279,12 @@ export function FilesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, status, query]);
 
+  const oversized = files.filter((f) => f.size > MAX_FILE_MB * 1024 * 1024);
+  const fileError = oversized.length
+    ? `${oversized[0].name} 超過上限 ${MAX_FILE_MB} MB`
+    : null;
+  const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+
   const pinError = (() => {
     if (!customPin) return null;
     const value = customPin.toUpperCase();
@@ -251,44 +301,104 @@ export function FilesPage() {
     return dayjs().add(Number(expiryPreset), 'day').toISOString();
   }
 
-  async function upload() {
-    if (!file) return;
+  /**
+   * Upload files into a share one at a time.
+   *
+   * Sequential rather than parallel: it keeps each progress bar meaningful, and
+   * avoids several large uploads competing for an office connection. Returns
+   * the names that made it.
+   */
+  async function uploadInto(code: string, chosen: File[]): Promise<string[]> {
+    setUploads(chosen.map((f) => ({ name: f.name, percent: 0, done: false })));
+    const uploaded: string[] = [];
+
+    for (let i = 0; i < chosen.length; i += 1) {
+      const file = chosen[i];
+      try {
+        await api.uploadFileToShare(code, file, (percent) => {
+          setUploads((prev) => prev.map((u, idx) => (idx === i ? { ...u, percent } : u)));
+        });
+        uploaded.push(file.name);
+        setUploads((prev) =>
+          prev.map((u, idx) => (idx === i ? { ...u, percent: 100, done: true } : u)),
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : '上傳失敗';
+        setUploads((prev) => prev.map((u, idx) => (idx === i ? { ...u, error: message } : u)));
+        notifications.show({ color: 'red', message: `${file.name}：${message}` });
+      }
+    }
+    return uploaded;
+  }
+
+  async function createAndUpload() {
+    if (!files.length) return;
     setUploading(true);
-    setProgress(0);
     try {
-      const created = await api.uploadSharedFile(
-        {
-          file,
-          note: note.trim() || null,
-          expires_at: resolveExpiry(),
-          pin: customPin ? customPin.toUpperCase() : null,
-        },
-        setProgress,
-      );
-      setFile(null);
-      setNote('');
-      setCustomPin('');
-      openShareResult({
-        title: '檔案已上傳',
-        shareUrl: created.share_url,
-        pin: created.pin,
-        filename: created.filename,
+      const created = await api.createShare({
+        note: note.trim() || null,
+        expires_at: resolveExpiry(),
+        pin: customPin ? customPin.toUpperCase() : null,
       });
+
+      const uploaded = await uploadInto(created.code, files);
+
+      if (uploaded.length === 0) {
+        notifications.show({
+          color: 'red',
+          message: '所有檔案都上傳失敗，分享連結已建立但沒有內容，請用「加入檔案」重試',
+        });
+      } else {
+        setFiles([]);
+        setNote('');
+        setCustomPin('');
+        openShareResult({
+          title:
+            uploaded.length === files.length
+              ? '分享連結已建立'
+              : `分享連結已建立（${uploaded.length}/${files.length} 個檔案上傳成功）`,
+          shareUrl: created.share_url,
+          pin: created.pin,
+          filenames: uploaded,
+        });
+      }
       load();
     } catch (e) {
-      notifications.show({ color: 'red', message: e instanceof Error ? e.message : '上傳失敗' });
+      notifications.show({ color: 'red', message: e instanceof Error ? e.message : '建立失敗' });
     } finally {
       setUploading(false);
-      setProgress(0);
+      setUploads([]);
     }
   }
 
-  function confirmRegeneratePin(f: SharedFile) {
+  function openAddFiles(share: FileShare) {
+    modals.open({
+      title: `加入檔案到 ${share.code}`,
+      size: 'lg',
+      children: (
+        <AddFilesForm
+          share={share}
+          onUpload={async (chosen) => {
+            const uploaded = await uploadInto(share.code, chosen);
+            if (uploaded.length) {
+              notifications.show({ color: 'green', message: `已加入 ${uploaded.length} 個檔案` });
+            }
+            modals.closeAll();
+            setUploads([]);
+            load();
+          }}
+          onCancel={() => modals.closeAll()}
+        />
+      ),
+    });
+  }
+
+  function confirmRegeneratePin(share: FileShare) {
     modals.openConfirmModal({
       title: '重新產生 PIN 碼？',
       children: (
         <Text size="sm">
-          將為 <Text span fw={600}>{f.filename}</Text> 產生一組新的 PIN
+          將為 <Text span fw={600}>{share.code}</Text> 產生一組新的 PIN
           碼。舊的 PIN 碼會立即失效，已經拿到舊 PIN 碼的人將無法再下載，請記得通知對方新的 PIN 碼。
         </Text>
       ),
@@ -296,12 +406,12 @@ export function FilesPage() {
       confirmProps: { color: 'orange' },
       onConfirm: async () => {
         try {
-          const res = await api.regenerateSharedFilePin(f.code);
+          const res = await api.regenerateSharePin(share.code);
           openShareResult({
             title: '已產生新的 PIN 碼',
-            shareUrl: f.share_url,
+            shareUrl: share.share_url,
             pin: res.pin,
-            filename: f.filename,
+            filenames: share.files.filter((f) => f.status === 'active').map((f) => f.filename),
           });
           load();
         } catch (e) {
@@ -311,16 +421,16 @@ export function FilesPage() {
     });
   }
 
-  function openEditModal(f: SharedFile) {
+  function openEditModal(share: FileShare) {
     modals.open({
-      title: '編輯檔案設定',
+      title: '編輯分享設定',
       size: 'md',
       children: (
         <EditForm
-          file={f}
+          share={share}
           onSave={async (patch) => {
             try {
-              await api.updateSharedFile(f.code, patch);
+              await api.updateShare(share.code, patch);
               notifications.show({ color: 'green', message: '已更新' });
               modals.closeAll();
               load();
@@ -334,19 +444,19 @@ export function FilesPage() {
     });
   }
 
-  function confirmDisable(f: SharedFile) {
+  function confirmDisable(share: FileShare) {
     modals.openConfirmModal({
       title: '停用分享連結？',
       children: (
         <Text size="sm">
-          停用後任何人都無法再下載 <Text span fw={600}>{f.filename}</Text>，檔案本身仍保留在系統中，日後可再重新啟用。
+          停用後任何人都無法再下載這 {share.file_count} 個檔案，檔案本身仍保留在系統中，日後可再重新啟用。
         </Text>
       ),
       labels: { confirm: '停用', cancel: '取消' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
-          await api.disableSharedFile(f.code);
+          await api.disableShare(share.code);
           notifications.show({ color: 'green', message: '已停用' });
           load();
         } catch (e) {
@@ -356,26 +466,58 @@ export function FilesPage() {
     });
   }
 
-  function confirmDelete(f: SharedFile) {
+  function confirmDelete(share: FileShare) {
     modals.openConfirmModal({
-      title: '永久刪除檔案？',
+      title: '永久刪除這個分享？',
       children: (
         <Text size="sm">
-          將把 <Text span fw={600}>{f.filename}</Text> 從儲存空間中<Text span fw={700} c="red">永久刪除</Text>
-          ，此操作無法復原。系統只會保留這筆分享紀錄供日後查核。
+          將把 <Text span fw={600}>{share.code}</Text> 底下的 {share.file_count} 個檔案從儲存空間中
+          <Text span fw={700} c="red">永久刪除</Text>，此操作無法復原。系統只會保留這筆分享紀錄供日後查核。
         </Text>
       ),
       labels: { confirm: '永久刪除', cancel: '取消' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
-          await api.deleteSharedFile(f.code);
+          await api.deleteShare(share.code);
           notifications.show({ color: 'green', message: '檔案已刪除' });
           load();
         } catch (e) {
           notifications.show({ color: 'red', message: e instanceof Error ? e.message : '操作失敗' });
         }
       },
+    });
+  }
+
+  function confirmDeleteFile(share: FileShare, fileId: number, filename: string) {
+    modals.openConfirmModal({
+      title: '從分享中移除這個檔案？',
+      children: (
+        <Text size="sm">
+          將把 <Text span fw={600}>{filename}</Text> 從儲存空間中
+          <Text span fw={700} c="red">永久刪除</Text>，分享中的其他檔案不受影響。
+        </Text>
+      ),
+      labels: { confirm: '永久刪除', cancel: '取消' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await api.deleteShareFile(share.code, fileId);
+          notifications.show({ color: 'green', message: '檔案已移除' });
+          load();
+        } catch (e) {
+          notifications.show({ color: 'red', message: e instanceof Error ? e.message : '操作失敗' });
+        }
+      },
+    });
+  }
+
+  function toggleExpanded(code: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
     });
   }
 
@@ -393,7 +535,7 @@ export function FilesPage() {
             檔案分享
           </Title>
           <Text c="dimmed" size="sm">
-            上傳檔案並產生需輸入 PIN 碼才能下載的分享連結
+            上傳檔案並產生需輸入 PIN 碼才能下載的分享連結；一個連結可放多個檔案
           </Text>
         </div>
         <Button
@@ -410,17 +552,23 @@ export function FilesPage() {
 
       <Card withBorder padding="xl" radius="md" style={cardStyle}>
         <Stack gap="md">
-          <Title order={4}>上傳新檔案</Title>
+          <Title order={4}>建立新的分享</Title>
           <Group align="flex-start" grow>
             <FileInput
-              label="選擇檔案"
+              label="選擇檔案（可多選）"
               placeholder="點此選擇要分享的檔案"
-              value={file}
-              onChange={setFile}
+              value={files}
+              onChange={setFiles}
+              multiple
               clearable
               size="md"
               radius="md"
-              description={file ? `檔案大小：${formatSize(file.size)}` : '單一檔案上限 25 MB'}
+              error={fileError}
+              description={
+                files.length
+                  ? `${files.length} 個檔案，共 ${formatSize(totalBytes)}`
+                  : '可一次選取多個檔案，它們會共用同一個連結與 PIN 碼'
+              }
             />
             <Select
               label="有效期限"
@@ -468,13 +616,15 @@ export function FilesPage() {
               styles={{ input: { fontFamily: 'monospace', letterSpacing: '2px' } }}
             />
           </Group>
-          {uploading && <Progress value={progress} striped animated size="lg" radius="md" />}
+          <UploadProgress uploads={uploads} />
           <Group justify="flex-end">
             <Button
               leftSection={<IconUpload size={18} />}
-              disabled={!file || !!pinError || (expiryPreset === 'custom' && !customExpiry)}
+              disabled={
+                !files.length || !!fileError || !!pinError || (expiryPreset === 'custom' && !customExpiry)
+              }
               loading={uploading}
-              onClick={upload}
+              onClick={createAndUpload}
               size="md"
               radius="md"
               style={{
@@ -525,19 +675,20 @@ export function FilesPage() {
           <Table highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th style={{ fontWeight: 600 }}>檔案名稱</Table.Th>
+                <Table.Th style={{ width: '40px' }} />
+                <Table.Th style={{ width: '100px', fontWeight: 600 }}>代碼</Table.Th>
+                <Table.Th style={{ fontWeight: 600 }}>內容</Table.Th>
                 <Table.Th style={{ width: '220px', fontWeight: 600 }}>分享連結</Table.Th>
-                <Table.Th style={{ width: '90px', fontWeight: 600 }}>大小</Table.Th>
                 <Table.Th style={{ width: '140px', fontWeight: 600 }}>有效期限</Table.Th>
                 <Table.Th style={{ width: '100px', fontWeight: 600 }}>狀態</Table.Th>
                 <Table.Th style={{ width: '90px', fontWeight: 600 }}>下載次數</Table.Th>
-                <Table.Th style={{ width: '150px' }}>操作</Table.Th>
+                <Table.Th style={{ width: '180px' }}>操作</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {loading ? (
                 <Table.Tr>
-                  <Table.Td colSpan={7}>
+                  <Table.Td colSpan={8}>
                     <Text c="dimmed" size="sm" ta="center" py="xl">
                       載入中…
                     </Text>
@@ -545,159 +696,313 @@ export function FilesPage() {
                 </Table.Tr>
               ) : items.length === 0 ? (
                 <Table.Tr>
-                  <Table.Td colSpan={7}>
+                  <Table.Td colSpan={8}>
                     <Text c="dimmed" size="sm" ta="center" py="xl">
                       {query || status !== 'all'
                         ? '查無符合篩選條件的資料'
-                        : '目前尚無分享檔案，請於上方上傳第一個檔案。'}
+                        : '目前尚無分享，請於上方建立第一個。'}
                     </Text>
                   </Table.Td>
                 </Table.Tr>
               ) : (
-                items.map((f) => (
-                  <Table.Tr key={f.id}>
-                    <Table.Td>
-                      <Group gap="xs" wrap="nowrap">
-                        <Text size="sm" style={{ wordBreak: 'break-all' }}>
-                          {f.filename}
-                        </Text>
-                        {f.is_locked && (
-                          <Tooltip label="PIN 碼連續輸入錯誤，連結暫時鎖定中" withArrow>
-                            <IconLock size={16} color="var(--mantine-color-red-6)" />
-                          </Tooltip>
-                        )}
-                      </Group>
-                      {f.note && (
-                        <Text size="xs" c="dimmed" lineClamp={1}>
-                          {f.note}
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap={4} wrap="nowrap">
-                        <Text size="xs" style={{ wordBreak: 'break-all', flex: 1 }}>
-                          {f.share_url}
-                        </Text>
-                        <CopyButton value={f.share_url} timeout={2000}>
-                          {({ copied, copy }) => (
-                            <Tooltip label={copied ? '已複製' : '複製連結'} withArrow>
-                              <ActionIcon
-                                variant="subtle"
-                                color={copied ? 'green' : 'blue'}
-                                onClick={copy}
-                                aria-label="複製連結"
-                              >
-                                {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
-                              </ActionIcon>
-                            </Tooltip>
+                items.map((share) => {
+                  const isOpen = expanded.has(share.code);
+                  const liveFiles = share.files.filter((f) => f.status === 'active');
+                  return (
+                    <Fragment key={share.code}>
+                      <Table.Tr>
+                        <Table.Td>
+                          <ActionIcon
+                            variant="subtle"
+                            color="gray"
+                            aria-label={isOpen ? '收合檔案清單' : '展開檔案清單'}
+                            onClick={() => toggleExpanded(share.code)}
+                          >
+                            {isOpen ? <IconChevronDown size={18} /> : <IconChevronRight size={18} />}
+                          </ActionIcon>
+                        </Table.Td>
+                        <Table.Td>
+                          <Group gap={6} wrap="nowrap">
+                            <Text
+                              fw={700}
+                              size="sm"
+                              style={{
+                                fontFamily: 'monospace',
+                                background: 'var(--mantine-color-gray-1)',
+                                padding: '4px 8px',
+                                borderRadius: 'var(--mantine-radius-sm)',
+                              }}
+                            >
+                              {share.code}
+                            </Text>
+                            {share.is_locked && (
+                              <Tooltip label="PIN 碼連續輸入錯誤，連結暫時鎖定中" withArrow>
+                                <IconLock size={16} color="var(--mantine-color-red-6)" />
+                              </Tooltip>
+                            )}
+                          </Group>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm">
+                            {share.file_count} 個檔案 · {formatSize(share.total_bytes)}
+                          </Text>
+                          {share.note && (
+                            <Text size="xs" c="dimmed" lineClamp={1}>
+                              {share.note}
+                            </Text>
                           )}
-                        </CopyButton>
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{formatSize(f.size_bytes)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">
-                        {f.expires_at ? dayjs(f.expires_at).format('YYYY-MM-DD HH:mm') : '永久有效'}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>{statusBadge(f)}</Table.Td>
-                    <Table.Td>
-                      <Text fw={600} size="sm" c="blue">
-                        {f.download_count.toLocaleString()}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      {f.status === 'deleted' ? (
-                        <Text size="xs" c="dimmed">
-                          —
-                        </Text>
-                      ) : (
-                        <Group gap="xs" wrap="nowrap">
-                          {f.status === 'disabled' ? (
-                            <Tooltip label="重新啟用" withArrow>
-                              <ActionIcon
-                                variant="subtle"
-                                color="green"
-                                aria-label="重新啟用"
-                                onClick={async () => {
-                                  try {
-                                    await api.enableSharedFile(f.code);
-                                    notifications.show({ color: 'green', message: '已重新啟用' });
-                                    load();
-                                  } catch (e) {
-                                    notifications.show({
-                                      color: 'red',
-                                      message: e instanceof Error ? e.message : '操作失敗',
-                                    });
-                                  }
-                                }}
-                              >
-                                <IconCheck size={18} />
-                              </ActionIcon>
-                            </Tooltip>
+                        </Table.Td>
+                        <Table.Td>
+                          <Group gap={4} wrap="nowrap">
+                            <Text size="xs" style={{ wordBreak: 'break-all', flex: 1 }}>
+                              {share.share_url}
+                            </Text>
+                            <CopyButton value={share.share_url} timeout={2000}>
+                              {({ copied, copy }) => (
+                                <Tooltip label={copied ? '已複製' : '複製連結'} withArrow>
+                                  <ActionIcon
+                                    variant="subtle"
+                                    color={copied ? 'green' : 'blue'}
+                                    onClick={copy}
+                                    aria-label="複製連結"
+                                  >
+                                    {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                                  </ActionIcon>
+                                </Tooltip>
+                              )}
+                            </CopyButton>
+                          </Group>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm">
+                            {share.expires_at
+                              ? dayjs(share.expires_at).format('YYYY-MM-DD HH:mm')
+                              : '永久有效'}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>{statusBadge(share)}</Table.Td>
+                        <Table.Td>
+                          <Text fw={600} size="sm" c="blue">
+                            {share.download_count.toLocaleString()}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          {share.status === 'deleted' ? (
+                            <Text size="xs" c="dimmed">
+                              —
+                            </Text>
                           ) : (
-                            <>
-                              <Tooltip label="重新產生 PIN 碼" withArrow>
-                                <ActionIcon
-                                  variant="subtle"
-                                  color="orange"
-                                  aria-label="重新產生 PIN 碼"
-                                  onClick={() => confirmRegeneratePin(f)}
-                                >
-                                  <IconKey size={18} />
-                                </ActionIcon>
-                              </Tooltip>
-                              <Tooltip label="編輯期限與備註" withArrow>
-                                <ActionIcon
-                                  variant="subtle"
-                                  color="blue"
-                                  aria-label="編輯期限與備註"
-                                  onClick={() => openEditModal(f)}
-                                >
-                                  <IconCalendar size={18} />
-                                </ActionIcon>
-                              </Tooltip>
-                              <Tooltip label="停用" withArrow>
+                            <Group gap="xs" wrap="nowrap">
+                              {share.status === 'disabled' ? (
+                                <Tooltip label="重新啟用" withArrow>
+                                  <ActionIcon
+                                    variant="subtle"
+                                    color="green"
+                                    aria-label="重新啟用"
+                                    onClick={async () => {
+                                      try {
+                                        await api.enableShare(share.code);
+                                        notifications.show({ color: 'green', message: '已重新啟用' });
+                                        load();
+                                      } catch (e) {
+                                        notifications.show({
+                                          color: 'red',
+                                          message: e instanceof Error ? e.message : '操作失敗',
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <IconCheck size={18} />
+                                  </ActionIcon>
+                                </Tooltip>
+                              ) : (
+                                <>
+                                  <Tooltip label="加入檔案" withArrow>
+                                    <ActionIcon
+                                      variant="subtle"
+                                      color="blue"
+                                      aria-label="加入檔案"
+                                      onClick={() => openAddFiles(share)}
+                                    >
+                                      <IconPlus size={18} />
+                                    </ActionIcon>
+                                  </Tooltip>
+                                  <Tooltip label="重新產生 PIN 碼" withArrow>
+                                    <ActionIcon
+                                      variant="subtle"
+                                      color="orange"
+                                      aria-label="重新產生 PIN 碼"
+                                      onClick={() => confirmRegeneratePin(share)}
+                                    >
+                                      <IconKey size={18} />
+                                    </ActionIcon>
+                                  </Tooltip>
+                                  <Tooltip label="編輯期限與備註" withArrow>
+                                    <ActionIcon
+                                      variant="subtle"
+                                      color="blue"
+                                      aria-label="編輯期限與備註"
+                                      onClick={() => openEditModal(share)}
+                                    >
+                                      <IconCalendar size={18} />
+                                    </ActionIcon>
+                                  </Tooltip>
+                                  <Tooltip label="停用" withArrow>
+                                    <ActionIcon
+                                      variant="subtle"
+                                      color="red"
+                                      aria-label="停用"
+                                      onClick={() => confirmDisable(share)}
+                                    >
+                                      <IconBan size={18} />
+                                    </ActionIcon>
+                                  </Tooltip>
+                                </>
+                              )}
+                              <Tooltip label="永久刪除全部檔案" withArrow>
                                 <ActionIcon
                                   variant="subtle"
                                   color="red"
-                                  aria-label="停用"
-                                  onClick={() => confirmDisable(f)}
+                                  aria-label="永久刪除全部檔案"
+                                  onClick={() => confirmDelete(share)}
                                 >
-                                  <IconBan size={18} />
+                                  <IconTrash size={18} />
                                 </ActionIcon>
                               </Tooltip>
-                            </>
+                            </Group>
                           )}
-                          <Tooltip label="永久刪除檔案" withArrow>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              aria-label="永久刪除檔案"
-                              onClick={() => confirmDelete(f)}
-                            >
-                              <IconTrash size={18} />
-                            </ActionIcon>
-                          </Tooltip>
-                        </Group>
-                      )}
-                    </Table.Td>
-                  </Table.Tr>
-                ))
+                        </Table.Td>
+                      </Table.Tr>
+                      <Table.Tr>
+                        <Table.Td colSpan={8} p={0} style={{ borderBottom: 0 }}>
+                          <Collapse in={isOpen}>
+                            <Stack gap="xs" p="md" bg="var(--mantine-color-gray-0)">
+                              {liveFiles.length === 0 ? (
+                                <Text size="sm" c="dimmed">
+                                  這個分享目前沒有檔案，公開連結不會顯示內容。
+                                </Text>
+                              ) : (
+                                liveFiles.map((f) => (
+                                  <Group key={f.id} gap="sm" wrap="nowrap">
+                                    <Text size="sm" style={{ flex: 1, wordBreak: 'break-all' }}>
+                                      {f.filename}
+                                    </Text>
+                                    <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                                      {formatSize(f.size_bytes)}
+                                    </Text>
+                                    <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                                      下載 {f.download_count} 次
+                                    </Text>
+                                    {share.status !== 'deleted' && (
+                                      <Tooltip label="從分享中移除" withArrow>
+                                        <ActionIcon
+                                          variant="subtle"
+                                          color="red"
+                                          size="sm"
+                                          aria-label="從分享中移除"
+                                          onClick={() => confirmDeleteFile(share, f.id, f.filename)}
+                                        >
+                                          <IconTrash size={16} />
+                                        </ActionIcon>
+                                      </Tooltip>
+                                    )}
+                                  </Group>
+                                ))
+                              )}
+                            </Stack>
+                          </Collapse>
+                        </Table.Td>
+                      </Table.Tr>
+                    </Fragment>
+                  );
+                })
               )}
             </Table.Tbody>
           </Table>
 
           <Group justify="space-between" mt="md" align="center">
             <Text size="sm" c="dimmed" fw={500}>
-              共 {total} 筆分享檔案
+              共 {total} 個分享
             </Text>
             <Pagination value={page} onChange={setPage} total={totalPages} size="md" radius="md" />
           </Group>
         </Stack>
       </Card>
+    </Stack>
+  );
+}
+
+function UploadProgress({ uploads }: { uploads: UploadState[] }) {
+  if (!uploads.length) return null;
+  return (
+    <Stack gap="xs">
+      {uploads.map((u) => (
+        <div key={u.name}>
+          <Group justify="space-between" gap="xs">
+            <Text size="xs" style={{ wordBreak: 'break-all' }}>
+              {u.name}
+            </Text>
+            <Text size="xs" c={u.error ? 'red' : u.done ? 'green' : 'dimmed'}>
+              {u.error ?? (u.done ? '完成' : `${u.percent}%`)}
+            </Text>
+          </Group>
+          <Progress
+            value={u.percent}
+            color={u.error ? 'red' : u.done ? 'green' : 'blue'}
+            striped={!u.done && !u.error}
+            animated={!u.done && !u.error}
+            size="md"
+            radius="md"
+          />
+        </div>
+      ))}
+    </Stack>
+  );
+}
+
+function AddFilesForm({
+  share,
+  onUpload,
+  onCancel,
+}: {
+  share: FileShare;
+  onUpload: (files: File[]) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [chosen, setChosen] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Stack gap="md">
+      <Text size="sm" c="dimmed">
+        新加入的檔案會使用 <Text span fw={600}>{share.code}</Text> 既有的連結與 PIN
+        碼，不需要另外通知對方新的 PIN 碼。
+      </Text>
+      <FileInput
+        label="選擇檔案（可多選）"
+        placeholder="點此選擇檔案"
+        value={chosen}
+        onChange={setChosen}
+        multiple
+        clearable
+        data-autofocus
+      />
+      <Group justify="flex-end" gap="sm">
+        <Button variant="default" onClick={onCancel} disabled={busy}>
+          取消
+        </Button>
+        <Button
+          loading={busy}
+          disabled={!chosen.length}
+          onClick={async () => {
+            setBusy(true);
+            await onUpload(chosen);
+            setBusy(false);
+          }}
+        >
+          上傳
+        </Button>
+      </Group>
     </Stack>
   );
 }

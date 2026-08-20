@@ -44,12 +44,51 @@ def main() -> int:
             print(f"READ MISMATCH: expected {len(payload)} bytes, got {len(received)}")
             return 1
         print("READ ok, bytes match")
+
+        stat = storage.stat(path)
+        print(f"STAT ok: {stat}")
     finally:
         try:
             storage.delete(path)
             print("DELETE ok")
         except Exception as e:  # noqa: BLE001 - report, don't mask an earlier failure
             print(f"DELETE FAILED: {e}")
+
+    # The browser-direct route is what carries anything Cloud Run would refuse,
+    # so prove it end to end rather than assuming the SDK call is enough.
+    resumable_path = f"{settings.FILE_STORAGE_PREFIX.strip('/')}/_healthcheck/{secrets.token_hex(8)}"
+    resumable_payload = b"resumable " + secrets.token_bytes(32)
+    try:
+        session_url = storage.create_upload_session(
+            resumable_path, "application/octet-stream", len(resumable_payload), "https://admin.url.taipei"
+        )
+        if not session_url:
+            print("RESUMABLE unavailable on this backend (expected for local disk)")
+        else:
+            import urllib.request
+
+            request = urllib.request.Request(
+                session_url,
+                data=resumable_payload,
+                method="PUT",
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            with urllib.request.urlopen(request, timeout=60) as response:
+                print(f"RESUMABLE PUT ok, HTTP {response.status}")
+
+            back = b"".join(storage.stream(resumable_path))
+            if back != resumable_payload:
+                print("RESUMABLE MISMATCH")
+                return 1
+            print(f"RESUMABLE read-back ok, {len(back)} bytes match")
+    except Exception as e:  # noqa: BLE001 - this check exists to report failures
+        print(f"RESUMABLE FAILED: {type(e).__name__}: {e}")
+        return 1
+    finally:
+        try:
+            storage.delete(resumable_path)
+        except Exception:  # noqa: BLE001
+            pass
 
     print("STORAGE_HEALTHCHECK=pass")
     return 0

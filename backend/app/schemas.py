@@ -69,23 +69,33 @@ class LinkUpdateIn(BaseModel):
 
 class SharedFileOut(BaseModel):
     id: int
-    code: str
     filename: str
     content_type: str
     size_bytes: int
+    status: str
+    download_count: int
+    created_at: dt.datetime
+
+
+class FileShareOut(BaseModel):
+    id: int
+    code: str
     note: str | None
     status: str
     expires_at: dt.datetime | None
     created_at: dt.datetime
     is_expired: bool
-    download_count: int
     is_locked: bool
     uploaded_by: str
     share_url: str
+    files: list[SharedFileOut]
+    file_count: int
+    total_bytes: int
+    download_count: int
 
 
-class SharedFileCreatedOut(SharedFileOut):
-    """Returned once, at upload time.
+class FileShareCreatedOut(FileShareOut):
+    """Returned once, when the share is created.
 
     ``pin`` is the only moment the PIN exists in readable form -- it is stored
     hashed, so it can be regenerated but never looked up again.
@@ -94,18 +104,48 @@ class SharedFileCreatedOut(SharedFileOut):
     pin: str
 
 
-class SharedFileListOut(BaseModel):
-    items: list[SharedFileOut]
+class FileShareListOut(BaseModel):
+    items: list[FileShareOut]
     total: int
     limit: int
     offset: int
 
 
-class SharedFileUpdateIn(BaseModel):
+class FileShareCreateIn(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+    expires_at: dt.datetime | None = None
+    pin: str | None = Field(default=None, max_length=64)
+
+
+class FileShareUpdateIn(BaseModel):
     """Partial update: only fields present in the request are applied."""
 
     expires_at: dt.datetime | None = None
     note: str | None = Field(default=None, max_length=2000)
+
+
+class UploadSessionIn(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255)
+    content_type: str | None = Field(default=None, max_length=128)
+    size_bytes: int = Field(..., ge=1)
+
+
+class UploadSessionOut(BaseModel):
+    """Where the browser should send the bytes.
+
+    ``mode`` is ``resumable`` when it can upload straight to object storage
+    (the only way past Cloud Run's 32 MiB request limit), or ``proxy`` when it
+    must post them through this service instead.
+    """
+
+    mode: str
+    upload_url: str
+    upload_token: str
+    storage_path: str
+
+
+class UploadFinalizeIn(BaseModel):
+    upload_token: str = Field(..., min_length=1, max_length=512)
 
 
 class PinOut(BaseModel):
@@ -117,10 +157,15 @@ class FileVerifyIn(BaseModel):
     pin: str = Field(..., min_length=1, max_length=64)
 
 
-class FileVerifyOut(BaseModel):
+class VerifiedFileOut(BaseModel):
+    id: int
     filename: str
     size_bytes: int
     download_url: str
+
+
+class FileVerifyOut(BaseModel):
+    files: list[VerifiedFileOut]
     expires_in: int
 
 

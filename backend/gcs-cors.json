@@ -1,0 +1,19 @@
+[
+  {
+    "origin": [
+      "https://admin.url.taipei",
+      "https://url-taipei.web.app",
+      "https://url-taipei.firebaseapp.com",
+      "http://localhost:5173"
+    ],
+    "method": ["PUT", "POST", "GET", "HEAD"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "Range",
+      "x-goog-resumable"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

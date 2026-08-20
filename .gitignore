@@ -34,6 +34,8 @@ firebase-debug.log
 !package-lock.json
 !tsconfig.json
 !firebase.json
+# Bucket CORS policy for browser-direct uploads; configuration, not a credential.
+!backend/gcs-cors.json
 service-account*.json
 *-credentials.json
 cloud-sql-proxy

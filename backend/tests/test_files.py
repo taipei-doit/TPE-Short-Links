@@ -6,7 +6,7 @@ import io
 import pytest
 
 from app import storage as storage_mod
-from app.models import SharedFile
+from app.models import FileShare, SharedFile
 from app.pins import PIN_LENGTH
 from app.settings import get_settings
 
@@ -24,16 +24,40 @@ def files_client(client, tmp_path, monkeypatch):
     storage_mod.reset_storage()
 
 
-def upload(files_client, *, name="report.pdf", content=b"hello world", **form):
+def create_share(files_client, **payload):
+    return files_client.post("/api/shares", json=payload)
+
+
+def add_file(files_client, code, *, name="report.pdf", content=b"hello world"):
+    """Run the two-step upload the browser performs: session, then bytes."""
+    session = files_client.post(
+        f"/api/shares/{code}/upload-session",
+        json={"filename": name, "content_type": "application/pdf", "size_bytes": len(content)},
+    )
+    if session.status_code != 200:
+        return session
+    body = session.json()
     return files_client.post(
-        "/api/files",
+        body["upload_url"],
         files={"file": (name, io.BytesIO(content), "application/pdf")},
-        data=form,
+        data={"upload_token": body["upload_token"]},
     )
 
 
-def test_upload_returns_code_and_pin(files_client):
-    r = upload(files_client, note="給長官")
+def make_share(files_client, *, name="report.pdf", content=b"hello world", **payload):
+    """Create a share holding one file and return its JSON plus the PIN."""
+    created = create_share(files_client, **payload).json()
+    add_file(files_client, created["code"], name=name, content=content)
+    return created
+
+
+# --------------------------------------------------------------------------
+# Creating shares and adding files
+# --------------------------------------------------------------------------
+
+
+def test_create_share_returns_code_and_pin(files_client):
+    r = create_share(files_client, note="給長官")
     assert r.status_code == 200, r.text
     data = r.json()
 
@@ -41,31 +65,152 @@ def test_upload_returns_code_and_pin(files_client):
     assert data["pin"].isalnum()
     assert any(c.isalpha() for c in data["pin"])
     assert any(c.isdigit() for c in data["pin"])
-    assert data["filename"] == "report.pdf"
-    assert data["size_bytes"] == len(b"hello world")
     assert data["note"] == "給長官"
     assert data["status"] == "active"
+    assert data["file_count"] == 0
     assert data["share_url"].endswith(f"/f/{data['code']}")
 
 
-def test_pin_is_not_stored_in_plaintext(files_client, db_session):
-    r = upload(files_client)
-    pin = r.json()["pin"]
+def test_one_share_holds_many_files(files_client):
+    created = create_share(files_client).json()
+    code = created["code"]
 
-    record = db_session.query(SharedFile).one()
-    assert pin not in record.pin_hash
-    assert record.pin_hash.startswith("pbkdf2_sha256$")
+    for i in range(7):
+        r = add_file(files_client, code, name=f"附件{i}.pdf", content=b"x" * (100 + i))
+        assert r.status_code == 200, r.text
 
+    listed = files_client.get("/api/shares").json()
+    assert listed["total"] == 1
+    share = listed["items"][0]
+    assert share["file_count"] == 7
+    assert share["total_bytes"] == sum(100 + i for i in range(7))
+    assert [f["filename"] for f in share["files"]] == [f"附件{i}.pdf" for i in range(7)]
 
-def test_landing_page_shows_metadata_and_hides_content(files_client):
-    code = upload(files_client, name="預算表.xlsx").json()["code"]
-
-    r = files_client.get(f"/f/{code}")
+    # One link, one PIN, seven files.
+    r = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]})
     assert r.status_code == 200
-    assert "預算表.xlsx" in r.text
-    assert "PIN" in r.text
-    # The bytes themselves must never appear before the PIN is entered.
-    assert "hello world" not in r.text
+    assert len(r.json()["files"]) == 7
+
+
+def test_pin_is_not_stored_in_plaintext(files_client, db_session):
+    pin = create_share(files_client).json()["pin"]
+
+    share = db_session.query(FileShare).one()
+    assert pin not in share.pin_hash
+    assert share.pin_hash.startswith("pbkdf2_sha256$")
+
+
+def test_upload_session_falls_back_to_proxy_without_object_storage(files_client):
+    code = create_share(files_client).json()["code"]
+    r = files_client.post(
+        f"/api/shares/{code}/upload-session",
+        json={"filename": "a.pdf", "content_type": "application/pdf", "size_bytes": 10},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    # Local disk cannot issue a browser-reachable upload URL.
+    assert body["mode"] == "proxy"
+    assert body["upload_url"] == f"/api/shares/{code}/files"
+
+
+def test_upload_session_refuses_a_file_beyond_the_overall_ceiling(files_client, monkeypatch):
+    monkeypatch.setenv("MAX_FILE_MB", "1")
+    get_settings.cache_clear()
+    code = create_share(files_client).json()["code"]
+
+    r = files_client.post(
+        f"/api/shares/{code}/upload-session",
+        json={"filename": "big.bin", "content_type": None, "size_bytes": 5 * 1024 * 1024},
+    )
+    assert r.status_code == 413
+
+
+def test_proxy_upload_refuses_a_file_beyond_the_cloud_run_limit(files_client, monkeypatch):
+    # Without object storage there is no way past what Cloud Run will accept.
+    monkeypatch.setenv("MAX_UPLOAD_MB", "1")
+    get_settings.cache_clear()
+    code = create_share(files_client).json()["code"]
+
+    r = files_client.post(
+        f"/api/shares/{code}/upload-session",
+        json={"filename": "big.bin", "content_type": None, "size_bytes": 5 * 1024 * 1024},
+    )
+    assert r.status_code == 413
+    assert "無法直接上傳" in r.json()["detail"]
+
+
+def test_upload_requires_a_valid_session_token(files_client):
+    code = create_share(files_client).json()["code"]
+    r = files_client.post(
+        f"/api/shares/{code}/files",
+        files={"file": ("a.pdf", io.BytesIO(b"x"), "application/pdf")},
+        data={"upload_token": "forged.token"},
+    )
+    assert r.status_code == 400
+
+
+def test_upload_token_is_bound_to_its_own_share(files_client):
+    first = create_share(files_client).json()["code"]
+    second = create_share(files_client).json()["code"]
+
+    session = files_client.post(
+        f"/api/shares/{first}/upload-session",
+        json={"filename": "a.pdf", "content_type": None, "size_bytes": 5},
+    ).json()
+
+    r = files_client.post(
+        f"/api/shares/{second}/files",
+        files={"file": ("a.pdf", io.BytesIO(b"hello"), "application/pdf")},
+        data={"upload_token": session["upload_token"]},
+    )
+    assert r.status_code == 400
+
+
+def test_empty_upload_is_rejected(files_client):
+    code = create_share(files_client).json()["code"]
+    assert add_file(files_client, code, content=b"").status_code == 422
+
+
+def test_expiry_must_be_in_the_future(files_client):
+    past = (dt.datetime.now(dt.UTC) - dt.timedelta(days=1)).isoformat()
+    assert create_share(files_client, expires_at=past).status_code == 422
+
+
+def test_custom_pin_is_accepted_and_validated(files_client):
+    assert create_share(files_client, pin="abcd1234").json()["pin"] == "ABCD1234"
+
+    assert create_share(files_client, pin="short1").status_code == 422
+    r = create_share(files_client, pin="ABCDEFGH")
+    assert r.status_code == 422
+    assert "數字" in r.json()["detail"]
+    r = create_share(files_client, pin="12345678")
+    assert r.status_code == 422
+    assert "英文" in r.json()["detail"]
+
+
+def test_filename_is_sanitized(files_client):
+    code = create_share(files_client).json()["code"]
+    r = add_file(files_client, code, name="../../etc/passwd")
+    assert r.status_code == 200
+    assert r.json()["filename"] == "passwd"
+
+
+# --------------------------------------------------------------------------
+# The public side
+# --------------------------------------------------------------------------
+
+
+def test_landing_page_hides_filenames_until_the_pin_is_entered(files_client):
+    created = make_share(files_client, name="機密預算表.xlsx", content=b"secret")
+
+    r = files_client.get(f"/f/{created['code']}")
+    assert r.status_code == 200
+    # Anyone can reach this page, so it shows only what is safe before the PIN.
+    assert "機密預算表.xlsx" not in r.text
+    assert "secret" not in r.text
+
+    r = files_client.post(f"/f/{created['code']}/verify", json={"pin": created["pin"]})
+    assert r.json()["files"][0]["filename"] == "機密預算表.xlsx"
 
 
 def test_unknown_code_redirects_to_404(files_client):
@@ -74,31 +219,46 @@ def test_unknown_code_redirects_to_404(files_client):
     assert r.headers["location"].endswith("/404.html")
 
 
-def test_correct_pin_yields_a_working_download(files_client):
-    created = upload(files_client, name="報告.pdf", content=b"secret bytes").json()
+def test_share_with_no_files_is_not_public_yet(files_client):
+    created = create_share(files_client).json()
+    assert files_client.get(f"/f/{created['code']}", follow_redirects=False).status_code == 302
+    assert files_client.post(
+        f"/f/{created['code']}/verify", json={"pin": created["pin"]}
+    ).status_code == 404
 
-    r = files_client.post(f"/f/{created['code']}/verify", json={"pin": created["pin"]})
+
+def test_correct_pin_yields_working_downloads(files_client):
+    created = create_share(files_client).json()
+    code = created["code"]
+    add_file(files_client, code, name="報告.pdf", content=b"first file")
+    add_file(files_client, code, name="附件.docx", content=b"second file")
+
+    r = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]})
     assert r.status_code == 200, r.text
-    download_url = r.json()["download_url"]
+    files = r.json()["files"]
+    assert len(files) == 2
 
-    d = files_client.get(download_url)
-    assert d.status_code == 200
-    assert d.content == b"secret bytes"
+    first = files_client.get(files[0]["download_url"])
+    assert first.status_code == 200
+    assert first.content == b"first file"
     # RFC 5987 encoding carries the Chinese filename through.
-    assert "filename*=UTF-8''" in d.headers["content-disposition"]
+    assert "filename*=UTF-8''" in first.headers["content-disposition"]
 
-    listed = files_client.get("/api/files").json()["items"][0]
-    assert listed["download_count"] == 1
+    second = files_client.get(files[1]["download_url"])
+    assert second.content == b"second file"
+
+    share = files_client.get("/api/shares").json()["items"][0]
+    assert share["download_count"] == 2
 
 
 def test_pin_check_is_case_insensitive(files_client):
-    created = upload(files_client).json()
+    created = make_share(files_client)
     r = files_client.post(f"/f/{created['code']}/verify", json={"pin": created["pin"].lower()})
     assert r.status_code == 200
 
 
 def test_wrong_pin_is_rejected_and_counted(files_client):
-    created = upload(files_client).json()
+    created = make_share(files_client)
 
     r = files_client.post(f"/f/{created['code']}/verify", json={"pin": "WRONG123"})
     assert r.status_code == 401
@@ -107,8 +267,8 @@ def test_wrong_pin_is_rejected_and_counted(files_client):
     assert r.json()["detail"]["remaining"] == 4
 
 
-def test_repeated_wrong_pins_lock_the_link(files_client):
-    created = upload(files_client).json()
+def test_repeated_wrong_pins_lock_the_share(files_client):
+    created = make_share(files_client)
     code = created["code"]
 
     for _ in range(4):
@@ -120,35 +280,40 @@ def test_repeated_wrong_pins_lock_the_link(files_client):
     assert r.json()["detail"]["minutes"] == 15
 
     # The correct PIN is refused too while the lockout holds.
-    r = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]})
-    assert r.status_code == 429
-
-    assert files_client.get("/api/files").json()["items"][0]["is_locked"] is True
+    assert files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]}).status_code == 429
+    assert files_client.get("/api/shares").json()["items"][0]["is_locked"] is True
 
 
 def test_download_requires_a_valid_token(files_client):
-    code = upload(files_client).json()["code"]
+    created = make_share(files_client)
+    code = created["code"]
+    file_id = files_client.get("/api/shares").json()["items"][0]["files"][0]["id"]
 
-    assert files_client.get(f"/f/{code}/download?token=forged.abc").status_code == 403
-    assert files_client.get(f"/f/{code}/download?token=99999999999.abc").status_code == 403
+    assert files_client.get(f"/f/{code}/download/{file_id}?token=forged.abc").status_code == 403
+    assert files_client.get(f"/f/{code}/download/{file_id}?token=99999999999.abc").status_code == 403
 
 
-def test_download_token_is_bound_to_its_own_file(files_client):
-    first = upload(files_client, name="a.pdf").json()
-    second = upload(files_client, name="b.pdf", content=b"other bytes").json()
+def test_download_token_is_bound_to_its_own_share(files_client):
+    first = make_share(files_client, name="a.pdf")
+    second = make_share(files_client, name="b.pdf", content=b"other bytes")
 
-    token = files_client.post(
-        f"/f/{first['code']}/verify", json={"pin": first["pin"]}
-    ).json()["download_url"].split("token=")[1]
+    token = (
+        files_client.post(f"/f/{first['code']}/verify", json={"pin": first["pin"]})
+        .json()["files"][0]["download_url"]
+        .split("token=")[1]
+    )
+    other_id = files_client.post(f"/f/{second['code']}/verify", json={"pin": second["pin"]}).json()[
+        "files"
+    ][0]["id"]
 
-    r = files_client.get(f"/f/{second['code']}/download?token={token}")
+    r = files_client.get(f"/f/{second['code']}/download/{other_id}?token={token}")
     assert r.status_code == 403
 
 
-def test_expired_file_is_unreachable(files_client, db_session):
-    created = upload(files_client).json()
-    record = db_session.query(SharedFile).one()
-    record.expires_at = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
+def test_expired_share_is_unreachable(files_client, db_session):
+    created = make_share(files_client)
+    share = db_session.query(FileShare).one()
+    share.expires_at = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
     db_session.commit()
 
     assert files_client.get(f"/f/{created['code']}", follow_redirects=False).status_code == 302
@@ -157,22 +322,27 @@ def test_expired_file_is_unreachable(files_client, db_session):
     ).status_code == 404
 
 
-def test_disabled_file_is_unreachable_then_restorable(files_client):
-    created = upload(files_client).json()
+def test_disabled_share_is_unreachable_then_restorable(files_client):
+    created = make_share(files_client)
     code = created["code"]
 
-    assert files_client.post(f"/api/files/{code}/disable").status_code == 200
+    assert files_client.post(f"/api/shares/{code}/disable").status_code == 200
     assert files_client.get(f"/f/{code}", follow_redirects=False).status_code == 302
 
-    assert files_client.post(f"/api/files/{code}/enable").status_code == 200
+    assert files_client.post(f"/api/shares/{code}/enable").status_code == 200
     assert files_client.get(f"/f/{code}").status_code == 200
 
 
+# --------------------------------------------------------------------------
+# Managing an existing share
+# --------------------------------------------------------------------------
+
+
 def test_regenerating_the_pin_invalidates_the_old_one(files_client):
-    created = upload(files_client).json()
+    created = make_share(files_client)
     code = created["code"]
 
-    r = files_client.post(f"/api/files/{code}/regenerate-pin")
+    r = files_client.post(f"/api/shares/{code}/regenerate-pin")
     assert r.status_code == 200
     new_pin = r.json()["pin"]
     assert new_pin != created["pin"]
@@ -182,70 +352,63 @@ def test_regenerating_the_pin_invalidates_the_old_one(files_client):
 
 
 def test_regenerating_the_pin_clears_a_lockout(files_client):
-    code = upload(files_client).json()["code"]
+    code = make_share(files_client)["code"]
     for _ in range(5):
         files_client.post(f"/f/{code}/verify", json={"pin": "WRONG123"})
 
-    new_pin = files_client.post(f"/api/files/{code}/regenerate-pin").json()["pin"]
+    new_pin = files_client.post(f"/api/shares/{code}/regenerate-pin").json()["pin"]
     assert files_client.post(f"/f/{code}/verify", json={"pin": new_pin}).status_code == 200
 
 
-def test_delete_erases_the_bytes_but_keeps_the_row(files_client, db_session):
-    created = upload(files_client).json()
+def test_deleting_one_file_leaves_the_rest_of_the_share(files_client, db_session):
+    created = create_share(files_client).json()
     code = created["code"]
-    record = db_session.query(SharedFile).one()
-    stored = storage_mod.get_storage()._full(record.storage_path)
+    add_file(files_client, code, name="keep.pdf", content=b"keep me")
+    add_file(files_client, code, name="drop.pdf", content=b"drop me")
+
+    drop = db_session.query(SharedFile).filter_by(filename="drop.pdf").one()
+    stored = storage_mod.get_storage()._full(drop.storage_path)
     assert stored.exists()
 
-    assert files_client.delete(f"/api/files/{code}").status_code == 200
+    assert files_client.delete(f"/api/shares/{code}/files/{drop.id}").status_code == 200
     assert not stored.exists()
 
-    db_session.refresh(record)
-    assert record.status == "deleted"
+    share = files_client.get("/api/shares").json()["items"][0]
+    assert share["file_count"] == 1
+    verified = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]}).json()
+    assert [f["filename"] for f in verified["files"]] == ["keep.pdf"]
+
+
+def test_delete_share_erases_every_file_but_keeps_the_row(files_client, db_session):
+    created = create_share(files_client).json()
+    code = created["code"]
+    add_file(files_client, code, name="a.pdf", content=b"aaa")
+    add_file(files_client, code, name="b.pdf", content=b"bbb")
+
+    paths = [
+        storage_mod.get_storage()._full(f.storage_path) for f in db_session.query(SharedFile).all()
+    ]
+    assert all(p.exists() for p in paths)
+
+    assert files_client.delete(f"/api/shares/{code}").status_code == 200
+    assert not any(p.exists() for p in paths)
+
+    share = db_session.query(FileShare).one()
+    db_session.refresh(share)
+    assert share.status == "deleted"
     assert files_client.get(f"/f/{code}", follow_redirects=False).status_code == 302
 
 
-def test_custom_pin_is_accepted_and_validated(files_client):
-    assert upload(files_client, pin="abcd1234").json()["pin"] == "ABCD1234"
-
-    r = upload(files_client, pin="short1")
-    assert r.status_code == 422
-    r = upload(files_client, pin="ABCDEFGH")
-    assert r.status_code == 422
-    assert "數字" in r.json()["detail"]
-    r = upload(files_client, pin="12345678")
-    assert r.status_code == 422
-    assert "英文" in r.json()["detail"]
-
-
-def test_oversized_upload_is_rejected(files_client, monkeypatch):
-    monkeypatch.setenv("MAX_UPLOAD_MB", "1")
-    get_settings.cache_clear()
-
-    r = upload(files_client, content=b"x" * (2 * 1024 * 1024))
-    assert r.status_code == 413
-    assert files_client.get("/api/files").json()["total"] == 0
-
-
-def test_empty_upload_is_rejected(files_client):
-    assert upload(files_client, content=b"").status_code == 422
-
-
-def test_expiry_must_be_in_the_future(files_client):
-    past = (dt.datetime.now(dt.UTC) - dt.timedelta(days=1)).isoformat()
-    assert upload(files_client, expires_at=past).status_code == 422
-
-
 def test_update_expiry_and_note(files_client):
-    code = upload(files_client, note="舊備註").json()["code"]
+    code = make_share(files_client, note="舊備註")["code"]
     future = (dt.datetime.now(dt.UTC) + dt.timedelta(days=3)).isoformat()
 
-    r = files_client.patch(f"/api/files/{code}", json={"note": "新備註"})
+    r = files_client.patch(f"/api/shares/{code}", json={"note": "新備註"})
     assert r.status_code == 200
     assert r.json()["note"] == "新備註"
     assert r.json()["expires_at"] is None
 
-    r = files_client.patch(f"/api/files/{code}", json={"expires_at": future})
+    r = files_client.patch(f"/api/shares/{code}", json={"expires_at": future})
     assert r.status_code == 200
     # Updating only the expiry must leave the note alone.
     assert r.json()["note"] == "新備註"
@@ -253,18 +416,24 @@ def test_update_expiry_and_note(files_client):
 
 
 def test_list_filters_by_status_and_query(files_client):
-    a = upload(files_client, name="alpha.pdf").json()
-    upload(files_client, name="beta.pdf", content=b"beta")
-    files_client.post(f"/api/files/{a['code']}/disable")
+    a = make_share(files_client, name="alpha.pdf")
+    make_share(files_client, name="beta.pdf", content=b"beta")
+    files_client.post(f"/api/shares/{a['code']}/disable")
 
-    assert files_client.get("/api/files").json()["total"] == 2
-    assert files_client.get("/api/files?status=active").json()["total"] == 1
-    assert files_client.get("/api/files?status=disabled").json()["total"] == 1
-    assert files_client.get("/api/files?query=beta").json()["total"] == 1
+    assert files_client.get("/api/shares").json()["total"] == 2
+    assert files_client.get("/api/shares?status=active").json()["total"] == 1
+    assert files_client.get("/api/shares?status=disabled").json()["total"] == 1
+    # Searching reaches into the filenames a share holds.
+    assert files_client.get("/api/shares?query=beta").json()["total"] == 1
+
+
+# --------------------------------------------------------------------------
+# Languages
+# --------------------------------------------------------------------------
 
 
 def test_landing_page_language_follows_accept_language(files_client):
-    code = upload(files_client).json()["code"]
+    code = make_share(files_client)["code"]
 
     cases = {
         "zh-TW,zh;q=0.9": ("檔案下載", 'lang="zh-Hant-TW"'),
@@ -282,7 +451,7 @@ def test_landing_page_language_follows_accept_language(files_client):
 
 
 def test_landing_page_language_can_be_forced_by_query(files_client):
-    code = upload(files_client).json()["code"]
+    code = make_share(files_client)["code"]
 
     # ?lang= wins over the browser's preference.
     r = files_client.get(f"/f/{code}?lang=ja", headers={"Accept-Language": "en-US,en;q=0.9"})
@@ -294,27 +463,9 @@ def test_landing_page_language_can_be_forced_by_query(files_client):
 
 
 def test_landing_page_ships_every_translation(files_client):
-    code = upload(files_client).json()["code"]
+    code = make_share(files_client)["code"]
     r = files_client.get(f"/f/{code}")
     # Switching language must not need a round trip, so all four are embedded.
     for heading in ("檔案下載", "File Download", "ファイルのダウンロード", "파일 다운로드"):
         assert heading in r.text
     assert r.headers["vary"] == "Accept-Language"
-
-
-def test_landing_page_escapes_the_filename(files_client):
-    # Angle brackets never survive filename sanitisation...
-    code = upload(files_client, name="<script>alert(1)</script>.pdf").json()["code"]
-    assert "<script>alert(1)</script>" not in files_client.get(f"/f/{code}").text
-
-    # ...and what does survive is still HTML-escaped on the way out.
-    code = upload(files_client, name="A&B 'quoted'.pdf", content=b"x").json()["code"]
-    r = files_client.get(f"/f/{code}")
-    assert "A&amp;B" in r.text
-    assert "A&B" not in r.text
-
-
-def test_filename_is_sanitized(files_client):
-    r = upload(files_client, name="../../etc/passwd")
-    assert r.status_code == 200
-    assert r.json()["filename"] == "passwd"

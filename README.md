@@ -30,15 +30,29 @@
 一般雲端硬碟的分享連結無法加密碼，因此本服務提供需輸入 PIN 碼才能下載的檔案分享。
 
 - **只有管理員能上傳**；拿到連結的人只能下載，不能瀏覽清單、修改或刪除任何東西
+- **一個連結可放多個檔案**，共用同一組 PIN 碼；要分享七份文件就是一個連結一組 PIN，不是七個。事後還能再加入或移除檔案，連結與 PIN 都不變
 - 分享連結為 `url.taipei/f/{代碼}`，與短網址各自獨立，代碼不會互相衝突，同樣**永不重用**
 - **PIN 碼為 8 碼英數字組合**（可自訂或自動產生）。自動產生時會排除容易看錯的 `O`、`I`、`0`、`1`，並保證至少各含一個英文字母與數字；輸入時不分大小寫
-- PIN 碼以 PBKDF2 雜湊儲存，**上傳當下顯示一次後即無法再查看**；忘記時只能重新產生一組新的（舊的立即失效）
+- PIN 碼以 PBKDF2 雜湊儲存，**建立當下顯示一次後即無法再查看**；忘記時只能重新產生一組新的（舊的立即失效）
 - 連續輸入錯誤 5 次，該連結鎖定 15 分鐘（次數記錄在資料庫，多台執行個體皆有效）
-- 儲存桶為私有，**不對外發放任何簽章網址**；檔案一律由後端在驗證 PIN 後串流輸出，輸入正確後取得的下載網址 5 分鐘後失效
-- 單檔上限 25 MB（受 Cloud Run 請求 32 MiB 限制）
-- 可設定有效期限（預設 7 天）、停用、重新啟用；**刪除會真正把檔案從儲存桶移除**，僅保留一筆紀錄供查核
-- 失效、過期、停用、不存在的分享連結，一律 302 轉址至 `/404.html`，無法用來探測哪些代碼存在
+- 儲存桶為私有，**不對外發放任何讀取用的簽章網址**；檔案一律由後端在驗證 PIN 後串流輸出，輸入正確後取得的下載網址 5 分鐘後失效
+- 下載頁在輸入 PIN 碼**之前只顯示檔案數量、總大小與有效期限**，不顯示檔名——任何人都能打開這一頁，而檔名本身可能就是敏感資訊
+- 可設定有效期限（預設 7 天）、停用、重新啟用；**刪除會真正把檔案從儲存桶移除**（可整包刪或只刪其中一個檔案），僅保留紀錄供查核
+- 失效、過期、停用、尚無檔案、不存在的分享連結，一律 302 轉址至 `/404.html`，無法用來探測哪些代碼存在
 - **民眾端下載頁支援中／英／日／韓四語**：預設依瀏覽器 `Accept-Language` 判斷（不支援的語言退回正體中文），頁面右上角可即時切換（不需重新載入，選擇會記在瀏覽器），也可用 `?lang=zh-Hant|en|ja|ko` 指定。管理介面維持正體中文
+
+#### 檔案大小與上傳路徑
+
+Cloud Run **在邊緣就會擋掉超過 32 MiB 的請求主體**（實測：28 MB 通過、32 MB 回 413），大檔根本進不到本服務。因此上傳有兩條路，由後端決定：
+
+| 情況 | 路徑 | 上限 |
+|---|---|---|
+| 有物件儲存（正式環境） | 後端開 resumable session，**瀏覽器直接傳到 Cloud Storage**，只把結果回報給後端 | `MAX_FILE_MB`（預設 2048 MB） |
+| 無物件儲存（本機開發） | 位元組經由後端轉送 | `MAX_UPLOAD_MB`（預設 30 MB，須低於 Cloud Run 的 32 MiB） |
+
+直傳的 session 是用服務帳號自己的憑證開的，**不需要簽章金鑰**，所以在 Cloud Run 預設身分下就能運作。它只是「可寫入某一個物件名稱」的權限，只發給已登入的管理員；檔案落地後，後端會**從儲存空間回讀實際大小與型別**再登錄，不採信前端宣稱的值。瀏覽器直傳需要儲存桶的 CORS 設定，見 `backend/gcs-cors.json`。
+
+下載一律走後端串流（回應串流不受 32 MiB 限制，該限制只管請求），這樣儲存桶才能保持私有、PIN 也才是唯一的關卡。
 
 ## 本機開發
 
@@ -129,7 +143,8 @@ gcloud storage buckets create gs://tpe-shortlinks-files \
   --location=asia-east1 \
   --uniform-bucket-level-access --public-access-prevention
 
-# 2) 設定生命週期規則，讓過期物件自動清理（選用，見 DEPLOYMENT.md）
+# 2) 讓瀏覽器能直傳（大檔唯一的路徑）
+gcloud storage buckets update gs://tpe-shortlinks-files --cors-file=backend/gcs-cors.json
 
 # 3) 讓 Cloud Run 服務帳號可讀寫該桶
 gcloud storage buckets add-iam-policy-binding gs://tpe-shortlinks-files \
@@ -139,6 +154,10 @@ gcloud storage buckets add-iam-policy-binding gs://tpe-shortlinks-files \
 gcloud run services update tpe-shortlinks-api --region=asia-east1 \
   --update-env-vars=FILE_STORAGE_BUCKET=tpe-shortlinks-files --timeout=900
 ```
+
+過期檔案的清理由 Cloud Run Job `purge-expired-files` 負責（`scripts/purge_expired_files.py`），
+Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期後再保留 30 天才真正抹除。
+先加 `--dry-run` 可以只看會刪哪些、不動任何東西。
 
 ## API 一覽
 
@@ -153,16 +172,20 @@ gcloud run services update tpe-shortlinks-api --region=asia-east1 \
 | `GET /api/links/{code}/qrcode` | 下載 QR Code PNG |
 | `GET /api/tags`、`POST /api/tags`、`DELETE /api/tags/{id}` | 標籤管理 |
 | `GET/POST/DELETE /api/blocked-words` | 封鎖字詞管理 |
-| `POST /api/files` | 上傳分享檔案（multipart：`file`、`note`、`expires_at`、`pin`），回傳分享連結與 PIN 碼（PIN 僅此一次） |
-| `GET /api/files?query=&status=&limit=&offset=` | 分享檔案清單 |
-| `PATCH /api/files/{code}` | 修改有效期限與／或備註 |
-| `POST /api/files/{code}/regenerate-pin` | 重新產生 PIN 碼（舊碼立即失效，並解除鎖定） |
-| `POST /api/files/{code}/disable`、`/enable` | 停用／重新啟用分享 |
-| `DELETE /api/files/{code}` | 永久刪除檔案內容（保留紀錄） |
+| `POST /api/shares` | 建立分享（`note`、`expires_at`、`pin`），回傳連結與 PIN 碼（PIN 僅此一次） |
+| `GET /api/shares?query=&status=&limit=&offset=` | 分享清單（含各自的檔案） |
+| `PATCH /api/shares/{code}` | 修改有效期限與／或備註 |
+| `POST /api/shares/{code}/upload-session` | 詢問該把檔案位元組送到哪裡，回傳 `mode=resumable\|proxy` 與上傳網址 |
+| `POST /api/shares/{code}/files` | 經後端轉送上傳（`file`＋`upload_token`；受 32 MiB 限制） |
+| `POST /api/shares/{code}/files/finalize` | 瀏覽器直傳完成後登錄檔案（`upload_token`） |
+| `DELETE /api/shares/{code}/files/{file_id}` | 永久刪除單一檔案，其餘不受影響 |
+| `POST /api/shares/{code}/regenerate-pin` | 重新產生 PIN 碼（舊碼立即失效，並解除鎖定） |
+| `POST /api/shares/{code}/disable`、`/enable` | 停用／重新啟用分享 |
+| `DELETE /api/shares/{code}` | 永久刪除整包檔案內容（保留紀錄） |
 | `GET /404.html` | 失效連結的中文提示頁 |
 | `GET /f/{code}?lang=` | 檔案下載頁（民眾端，無需登入；中／英／日／韓） |
-| `POST /f/{code}/verify` | 驗證 PIN 碼，回傳 5 分鐘有效的下載網址（民眾端）；錯誤回傳 `{"detail":{"error":"wrong_pin\|locked\|not_found",…}}` 供前端翻譯 |
-| `GET /f/{code}/download?token=` | 下載檔案（民眾端，需有效下載權杖） |
+| `POST /f/{code}/verify` | 驗證 PIN 碼，回傳檔案清單與 5 分鐘有效的下載網址（民眾端）；錯誤回傳 `{"detail":{"error":"wrong_pin\|locked\|not_found",…}}` 供前端翻譯 |
+| `GET /f/{code}/download/{file_id}?token=` | 下載單一檔案（民眾端，需有效下載權杖） |
 | `GET /{code}` | 轉址（民眾端，無需登入） |
 
 ## 相關文件

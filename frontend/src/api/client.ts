@@ -1,11 +1,13 @@
 import type {
   Admin,
   CreateLinkIn,
+  FileShare,
+  FileShareCreated,
+  FileShareList,
   Link,
   LinkList,
   SharedFile,
-  SharedFileCreated,
-  SharedFileList,
+  UploadSession,
   Tag,
 } from './types';
 import { auth } from '../firebase';
@@ -128,6 +130,45 @@ async function uploadWithProgress<T>(
   });
 }
 
+/**
+ * Send a file's bytes straight to object storage.
+ *
+ * The session URL already carries its own authorization, so no auth header is
+ * attached here — and deliberately so: this request must not go anywhere near
+ * our own origin. Cloud Run rejects request bodies over 32 MiB before they
+ * reach the backend, so for anything large this is the only route that works.
+ */
+async function putToStorage(
+  uploadUrl: string,
+  file: File,
+  contentType: string,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('Content-Type', contentType);
+
+    xhr.upload.onprogress = (event) => {
+      if (onProgress && event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      reject(new Error(`上傳至儲存空間失敗（${xhr.status}）`));
+    };
+    xhr.onerror = () => reject(new Error('上傳至儲存空間失敗，請檢查網路連線'));
+    xhr.onabort = () => reject(new Error('上傳已取消'));
+
+    xhr.send(file);
+  });
+}
+
 export const api = {
   getTags: () => apiFetch<Tag[]>('/api/tags'),
   createLink: (payload: CreateLinkIn) =>
@@ -180,19 +221,11 @@ export const api = {
   createTag: (name: string) => apiFetch<Tag>(`/api/tags?name=${encodeURIComponent(name)}`, { method: 'POST' }),
   deleteTag: (tagId: number) => apiFetch<{ message: string; tag_id: number }>(`/api/tags/${tagId}`, { method: 'DELETE' }),
 
-  // PIN-protected file sharing.
-  uploadSharedFile: (
-    payload: { file: File; note?: string | null; expires_at?: string | null; pin?: string | null },
-    onProgress?: (percent: number) => void,
-  ) => {
-    const form = new FormData();
-    form.append('file', payload.file);
-    if (payload.note) form.append('note', payload.note);
-    if (payload.expires_at) form.append('expires_at', payload.expires_at);
-    if (payload.pin) form.append('pin', payload.pin);
-    return uploadWithProgress<SharedFileCreated>('/api/files', form, onProgress);
-  },
-  listSharedFiles: (params: {
+  // PIN-protected file sharing. A share is one link and one PIN holding any
+  // number of files; each file is uploaded in its own request.
+  createShare: (payload: { note?: string | null; expires_at?: string | null; pin?: string | null }) =>
+    apiFetch<FileShareCreated>('/api/shares', { method: 'POST', body: JSON.stringify(payload) }),
+  listShares: (params: {
     query?: string;
     status?: 'active' | 'disabled' | 'expired' | 'deleted' | 'all';
     limit?: number;
@@ -204,29 +237,75 @@ export const api = {
     if (params.limit) sp.set('limit', String(params.limit));
     if (params.offset) sp.set('offset', String(params.offset));
     const qs = sp.toString();
-    return apiFetch<SharedFileList>(`/api/files${qs ? `?${qs}` : ''}`);
+    return apiFetch<FileShareList>(`/api/shares${qs ? `?${qs}` : ''}`);
   },
-  updateSharedFile: (code: string, patch: { expires_at?: string | null; note?: string | null }) =>
-    apiFetch<SharedFile>(`/api/files/${encodeURIComponent(code)}`, {
+  /**
+   * Put one file into a share.
+   *
+   * The backend decides the route: straight to object storage for anything
+   * Cloud Run would refuse, otherwise through the backend. Both end with the
+   * file attached to the share.
+   */
+  uploadFileToShare: async (
+    code: string,
+    file: File,
+    onProgress?: (percent: number) => void,
+  ): Promise<SharedFile> => {
+    const path = `/api/shares/${encodeURIComponent(code)}`;
+    const session = await apiFetch<UploadSession>(`${path}/upload-session`, {
+      method: 'POST',
+      body: JSON.stringify({
+        filename: file.name,
+        content_type: file.type || null,
+        size_bytes: file.size,
+      }),
+    });
+
+    if (session.mode === 'resumable') {
+      await putToStorage(
+        session.upload_url,
+        file,
+        file.type || 'application/octet-stream',
+        onProgress,
+      );
+      return apiFetch<SharedFile>(`${path}/files/finalize`, {
+        method: 'POST',
+        body: JSON.stringify({ upload_token: session.upload_token }),
+      });
+    }
+
+    const form = new FormData();
+    form.append('file', file);
+    form.append('upload_token', session.upload_token);
+    return uploadWithProgress<SharedFile>(session.upload_url, form, onProgress);
+  },
+  updateShare: (code: string, patch: { expires_at?: string | null; note?: string | null }) =>
+    apiFetch<FileShare>(`/api/shares/${encodeURIComponent(code)}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
   /** Issue a new PIN. The previous one stops working immediately. */
-  regenerateSharedFilePin: (code: string) =>
-    apiFetch<{ code: string; pin: string }>(`/api/files/${encodeURIComponent(code)}/regenerate-pin`, {
+  regenerateSharePin: (code: string) =>
+    apiFetch<{ code: string; pin: string }>(`/api/shares/${encodeURIComponent(code)}/regenerate-pin`, {
       method: 'POST',
     }),
-  disableSharedFile: (code: string) =>
-    apiFetch<{ code: string; status: string }>(`/api/files/${encodeURIComponent(code)}/disable`, {
+  disableShare: (code: string) =>
+    apiFetch<{ code: string; status: string }>(`/api/shares/${encodeURIComponent(code)}/disable`, {
       method: 'POST',
     }),
-  enableSharedFile: (code: string) =>
-    apiFetch<{ code: string; status: string }>(`/api/files/${encodeURIComponent(code)}/enable`, {
+  enableShare: (code: string) =>
+    apiFetch<{ code: string; status: string }>(`/api/shares/${encodeURIComponent(code)}/enable`, {
       method: 'POST',
     }),
-  /** Erase the stored bytes. The record stays for the audit trail. */
-  deleteSharedFile: (code: string) =>
-    apiFetch<{ message: string; code: string }>(`/api/files/${encodeURIComponent(code)}`, {
+  /** Erase one file's bytes, leaving the rest of the share intact. */
+  deleteShareFile: (code: string, fileId: number) =>
+    apiFetch<{ message: string; code: string }>(
+      `/api/shares/${encodeURIComponent(code)}/files/${fileId}`,
+      { method: 'DELETE' },
+    ),
+  /** Erase every file in the share. The record stays for the audit trail. */
+  deleteShare: (code: string) =>
+    apiFetch<{ message: string; code: string }>(`/api/shares/${encodeURIComponent(code)}`, {
       method: 'DELETE',
     }),
 

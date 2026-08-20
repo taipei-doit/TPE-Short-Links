@@ -52,8 +52,12 @@ class BlockedWord(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
-class SharedFile(Base):
-    """A file shared behind a PIN gate at PUBLIC_BASE_URL/f/{code}.
+class FileShare(Base):
+    """One PIN-protected share link at PUBLIC_BASE_URL/f/{code}.
+
+    A share holds one or more files: sending seven documents should mean one
+    link and one PIN, not seven of each. It also means each file is uploaded in
+    its own request, so the total size of a share is unbounded.
 
     Only admins upload. Anyone holding the link must still enter the PIN to
     download, and can never modify or list anything. The PIN is stored as a
@@ -64,23 +68,16 @@ class SharedFile(Base):
     link codes. As with short links, a code is never reused.
     """
 
-    __tablename__ = "shared_files"
+    __tablename__ = "file_shares"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    content_type: Mapped[str] = mapped_column(String(128), nullable=False, server_default="application/octet-stream")
-    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
-    # Object key in the storage backend. Randomised, so the object name cannot
-    # be guessed from the share link.
-    storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     pin_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # active | disabled | deleted ("deleted" keeps the audit row after the
     # bytes are removed from storage).
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
     expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    download_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # Brute-force throttle, kept in the database so it holds across the
     # multiple Cloud Run instances a single share link may be spread over.
     failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -88,6 +85,33 @@ class SharedFile(Base):
     uploaded_by: Mapped[str] = mapped_column(String(320), nullable=False, server_default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    files: Mapped[list["SharedFile"]] = relationship(
+        back_populates="share", cascade="all, delete-orphan", order_by="SharedFile.id"
+    )
+
+
+class SharedFile(Base):
+    """One file inside a share."""
+
+    __tablename__ = "shared_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    share_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("file_shares.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(128), nullable=False, server_default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    # Object key in the storage backend. Randomised, so the object name cannot
+    # be guessed from the share link.
+    storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    # active | deleted (bytes erased, row kept for the audit trail)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
+    download_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    share: Mapped[FileShare] = relationship(back_populates="files")
 
 
 class AdminUser(Base):

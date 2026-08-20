@@ -30,9 +30,16 @@ class Settings(BaseSettings):
     FILE_STORAGE_BUCKET: str = ""
     FILE_STORAGE_LOCAL_DIR: str = ""
     FILE_STORAGE_PREFIX: str = "shared-files"
-    # Cloud Run rejects request bodies over 32 MiB, so the ceiling has to stay
-    # under that once multipart overhead is counted.
-    MAX_UPLOAD_MB: int = 25
+    # Ceiling for bytes PROXIED THROUGH this service. Cloud Run rejects request
+    # bodies over 32 MiB at the edge, before we see them. Measured against the
+    # deployed service: a 28 MB upload reaches the app, 32 MB comes back as a
+    # 413 from the infrastructure. 30 leaves room for the multipart framing.
+    MAX_UPLOAD_MB: int = 30
+    # Ceiling for a single file overall. Anything above MAX_UPLOAD_MB has to go
+    # straight from the browser to object storage, which has no such limit.
+    MAX_FILE_MB: int = 2048
+    # How long a browser has to finish an upload before its session token dies.
+    UPLOAD_SESSION_TTL_SECONDS: int = 6 * 60 * 60
     FILE_CODE_LENGTH: int = 6
     # Signs the short-lived download tokens issued after a correct PIN. Falls
     # back to a value derived from INTERNAL_API_TOKEN so a deployment that

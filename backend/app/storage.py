@@ -35,6 +35,18 @@ class Storage(Protocol):
 
     def delete(self, path: str) -> None: ...
 
+    def stat(self, path: str) -> tuple[int, str] | None:
+        """Return (size_bytes, content_type), or None if the object is absent."""
+        ...
+
+    def create_upload_session(self, path: str, content_type: str, size: int, origin: str) -> str | None:
+        """Return a URL the browser can upload straight to, or None.
+
+        None means this backend has no such capability and the caller must fall
+        back to sending the bytes through the application.
+        """
+        ...
+
 
 class LocalStorage:
     """Filesystem-backed storage for tests and local development."""
@@ -66,6 +78,17 @@ class LocalStorage:
         full = self._full(path)
         if full.exists():
             full.unlink()
+
+    def stat(self, path: str) -> tuple[int, str] | None:
+        full = self._full(path)
+        if not full.exists():
+            return None
+        return full.stat().st_size, "application/octet-stream"
+
+    def create_upload_session(self, path: str, content_type: str, size: int, origin: str) -> str | None:
+        # Local disk has no browser-reachable upload endpoint; callers fall
+        # back to posting the bytes through the application.
+        return None
 
 
 class GcsStorage:
@@ -104,6 +127,32 @@ class GcsStorage:
             # The row is the source of truth; an object already gone (e.g. a
             # previous partial delete) still counts as deleted.
             pass
+
+    def stat(self, path: str) -> tuple[int, str] | None:
+        blob = self._get_bucket().get_blob(path)
+        if blob is None:
+            return None
+        return int(blob.size or 0), blob.content_type or "application/octet-stream"
+
+    def create_upload_session(self, path: str, content_type: str, size: int, origin: str) -> str | None:
+        """Open a GCS resumable upload session for the browser to PUT into.
+
+        Cloud Run refuses request bodies over 32 MiB at the edge, so anything
+        larger can never be proxied through this service. The session URI is a
+        capability for exactly one object name and nothing else; it is only
+        ever handed to an authenticated admin, and the resulting object is
+        checked (and its real size recorded) before it is attached to a share.
+
+        This needs no signing key -- the session is opened with the service
+        account's own credentials, which is why it works on Cloud Run's default
+        identity.
+        """
+        blob = self._get_bucket().blob(path)
+        return blob.create_resumable_upload_session(
+            content_type=content_type,
+            size=size,
+            origin=origin,
+        )
 
 
 _storage: Storage | None = None
