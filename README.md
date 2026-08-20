@@ -3,7 +3,7 @@
 臺北市政府內部使用的短網址服務。
 
 - **轉址**：`https://url.taipei/{代碼}` → 302 轉址至原始網址
-
+- **檔案分享**：`https://url.taipei/f/{代碼}` → 輸入 PIN 碼後下載檔案
 
 ## 系統架構
 
@@ -12,6 +12,7 @@
 | 後端 API＋轉址 | Python / FastAPI | Cloud Run `tpe-shortlinks-api`（asia-east1），`url.taipei` 網域直接指向此服務 |
 | 管理介面 | React / Vite / Mantine | Firebase Hosting |
 | 資料庫 | PostgreSQL | Cloud SQL `tpe-shortlinks-db`（asia-east1） |
+| 分享檔案儲存 | Cloud Storage | 私有儲存桶（`FILE_STORAGE_BUCKET`），僅後端以服務帳號存取 |
 | 登入寄信 | Firebase Functions | `sendAdminLoginLink` 等（`functions/index.js`） |
 
 ## 功能與規則
@@ -23,6 +24,21 @@
 - 標籤為必填；有效期限可設為永久或指定時間
 - 同一原始網址若已有使用中的短網址，重複建立會回 409 提示沿用
 - 管理 API（`/api/*`）需 Firebase 管理員登入；管理員名單於管理介面「管理員」頁維護
+
+### 檔案分享（PIN 碼保護）
+
+一般雲端硬碟的分享連結無法加密碼，因此本服務提供需輸入 PIN 碼才能下載的檔案分享。
+
+- **只有管理員能上傳**；拿到連結的人只能下載，不能瀏覽清單、修改或刪除任何東西
+- 分享連結為 `url.taipei/f/{代碼}`，與短網址各自獨立，代碼不會互相衝突，同樣**永不重用**
+- **PIN 碼為 8 碼英數字組合**（可自訂或自動產生）。自動產生時會排除容易看錯的 `O`、`I`、`0`、`1`，並保證至少各含一個英文字母與數字；輸入時不分大小寫
+- PIN 碼以 PBKDF2 雜湊儲存，**上傳當下顯示一次後即無法再查看**；忘記時只能重新產生一組新的（舊的立即失效）
+- 連續輸入錯誤 5 次，該連結鎖定 15 分鐘（次數記錄在資料庫，多台執行個體皆有效）
+- 儲存桶為私有，**不對外發放任何簽章網址**；檔案一律由後端在驗證 PIN 後串流輸出，輸入正確後取得的下載網址 5 分鐘後失效
+- 單檔上限 25 MB（受 Cloud Run 請求 32 MiB 限制）
+- 可設定有效期限（預設 7 天）、停用、重新啟用；**刪除會真正把檔案從儲存桶移除**，僅保留一筆紀錄供查核
+- 失效、過期、停用、不存在的分享連結，一律 302 轉址至 `/404.html`，無法用來探測哪些代碼存在
+- **民眾端下載頁支援中／英／日／韓四語**：預設依瀏覽器 `Accept-Language` 判斷（不支援的語言退回正體中文），頁面右上角可即時切換（不需重新載入，選擇會記在瀏覽器），也可用 `?lang=zh-Hant|en|ja|ko` 指定。管理介面維持正體中文
 
 ## 本機開發
 
@@ -97,6 +113,33 @@ firebase deploy --only hosting
 
 需要根目錄 `.firebaserc` 與 `frontend/.env.production`（皆已 gitignore，不在版本庫內；新機器設定時向團隊索取，或參考 `DEPLOYMENT.md`）。
 
+### 資料庫 schema 變更
+
+機關網路封鎖 Cloud SQL 的 3307 埠，無法用 `cloud-sql-proxy` 直連，因此 migration 一律在 GCP 內部以 Cloud Run Job 執行：
+
+```bash
+gcloud run jobs execute db-migrate --region=asia-east1 --wait
+```
+
+### 檔案分享功能的一次性建置
+
+```bash
+# 1) 建立私有儲存桶（統一儲存桶層級存取、封鎖所有公開存取）
+gcloud storage buckets create gs://tpe-shortlinks-files \
+  --location=asia-east1 \
+  --uniform-bucket-level-access --public-access-prevention
+
+# 2) 設定生命週期規則，讓過期物件自動清理（選用，見 DEPLOYMENT.md）
+
+# 3) 讓 Cloud Run 服務帳號可讀寫該桶
+gcloud storage buckets add-iam-policy-binding gs://tpe-shortlinks-files \
+  --member=serviceAccount:<CLOUD_RUN_SA> --role=roles/storage.objectAdmin
+
+# 4) 告訴後端要用哪個桶，並放寬逾時（大檔下載可能超過預設 300 秒）
+gcloud run services update tpe-shortlinks-api --region=asia-east1 \
+  --update-env-vars=FILE_STORAGE_BUCKET=tpe-shortlinks-files --timeout=900
+```
+
 ## API 一覽
 
 | 方法與路徑 | 說明 |
@@ -110,7 +153,16 @@ firebase deploy --only hosting
 | `GET /api/links/{code}/qrcode` | 下載 QR Code PNG |
 | `GET /api/tags`、`POST /api/tags`、`DELETE /api/tags/{id}` | 標籤管理 |
 | `GET/POST/DELETE /api/blocked-words` | 封鎖字詞管理 |
+| `POST /api/files` | 上傳分享檔案（multipart：`file`、`note`、`expires_at`、`pin`），回傳分享連結與 PIN 碼（PIN 僅此一次） |
+| `GET /api/files?query=&status=&limit=&offset=` | 分享檔案清單 |
+| `PATCH /api/files/{code}` | 修改有效期限與／或備註 |
+| `POST /api/files/{code}/regenerate-pin` | 重新產生 PIN 碼（舊碼立即失效，並解除鎖定） |
+| `POST /api/files/{code}/disable`、`/enable` | 停用／重新啟用分享 |
+| `DELETE /api/files/{code}` | 永久刪除檔案內容（保留紀錄） |
 | `GET /404.html` | 失效連結的中文提示頁 |
+| `GET /f/{code}?lang=` | 檔案下載頁（民眾端，無需登入；中／英／日／韓） |
+| `POST /f/{code}/verify` | 驗證 PIN 碼，回傳 5 分鐘有效的下載網址（民眾端）；錯誤回傳 `{"detail":{"error":"wrong_pin\|locked\|not_found",…}}` 供前端翻譯 |
+| `GET /f/{code}/download?token=` | 下載檔案（民眾端，需有效下載權杖） |
 | `GET /{code}` | 轉址（民眾端，無需登入） |
 
 ## 相關文件

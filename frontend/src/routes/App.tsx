@@ -1,11 +1,12 @@
 import { AppShell, Button, Container, Group, Title } from '@mantine/core';
-import { IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
+import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import { AdminsPage } from './AdminsPage';
 import { BlockedWordsPage } from './BlockedWordsPage';
 import { CreatePage } from './CreatePage';
+import { FilesPage } from './FilesPage';
 import { LoginPage } from './LoginPage';
 import { ManagePage } from './ManagePage';
 import { TagsPage } from './TagsPage';
@@ -17,6 +18,7 @@ export function App() {
   const navItems = [
     { path: '/create', label: '建立短網址', icon: IconLink },
     { path: '/manage', label: '管理短網址', icon: IconListSearch },
+    { path: '/files', label: '檔案分享', icon: IconFileUpload },
     { path: '/tags', label: '標籤管理', icon: IconTags },
     { path: '/blocked-words', label: '封鎖字詞', icon: IconShield },
     { path: '/admins', label: '管理員', icon: IconUsers },
@@ -121,6 +123,7 @@ export function App() {
               <Route path="/login" element={<Navigate to="/create" replace />} />
               <Route path="/create" element={<CreatePage />} />
               <Route path="/manage" element={<ManagePage />} />
+              <Route path="/files" element={<FilesPage />} />
               <Route path="/tags" element={<TagsPage />} />
               <Route path="/blocked-words" element={<BlockedWordsPage />} />
               <Route path="/admins" element={<AdminsPage />} />

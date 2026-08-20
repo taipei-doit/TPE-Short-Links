@@ -67,6 +67,63 @@ class LinkUpdateIn(BaseModel):
     expires_at: dt.datetime | None = None
 
 
+class SharedFileOut(BaseModel):
+    id: int
+    code: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    note: str | None
+    status: str
+    expires_at: dt.datetime | None
+    created_at: dt.datetime
+    is_expired: bool
+    download_count: int
+    is_locked: bool
+    uploaded_by: str
+    share_url: str
+
+
+class SharedFileCreatedOut(SharedFileOut):
+    """Returned once, at upload time.
+
+    ``pin`` is the only moment the PIN exists in readable form -- it is stored
+    hashed, so it can be regenerated but never looked up again.
+    """
+
+    pin: str
+
+
+class SharedFileListOut(BaseModel):
+    items: list[SharedFileOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class SharedFileUpdateIn(BaseModel):
+    """Partial update: only fields present in the request are applied."""
+
+    expires_at: dt.datetime | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class PinOut(BaseModel):
+    code: str
+    pin: str
+
+
+class FileVerifyIn(BaseModel):
+    pin: str = Field(..., min_length=1, max_length=64)
+
+
+class FileVerifyOut(BaseModel):
+    filename: str
+    size_bytes: int
+    download_url: str
+    expires_in: int
+
+
 class DisableOut(BaseModel):
     code: str
     status: str

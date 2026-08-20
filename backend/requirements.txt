@@ -14,4 +14,8 @@ qrcode[pil]>=7.0
 cloud-sql-python-connector[pg8000]==1.12.1
 google-auth>=2.0.0
 google-cloud-firestore>=2.19.0
+# Object storage for PIN-protected shared files (app/storage.py)
+google-cloud-storage>=2.18.0
+# Multipart form parsing, required by FastAPI for file uploads
+python-multipart>=0.0.18
 requests>=2.28.0

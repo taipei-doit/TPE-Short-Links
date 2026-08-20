@@ -1,4 +1,13 @@
-import type { Admin, CreateLinkIn, Link, LinkList, Tag } from './types';
+import type {
+  Admin,
+  CreateLinkIn,
+  Link,
+  LinkList,
+  SharedFile,
+  SharedFileCreated,
+  SharedFileList,
+  Tag,
+} from './types';
 import { auth } from '../firebase';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000';
@@ -71,6 +80,54 @@ async function downloadFile(path: string, filename: string): Promise<void> {
   }
 }
 
+/**
+ * Upload a file with progress reporting.
+ *
+ * Uses XMLHttpRequest rather than fetch because fetch gives no upload progress,
+ * and a 25 MB file over an office connection needs a progress bar to not look
+ * frozen. The browser sets the multipart boundary itself, so no content-type
+ * header is set here.
+ */
+async function uploadWithProgress<T>(
+  path: string,
+  form: FormData,
+  onProgress?: (percent: number) => void,
+): Promise<T> {
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}${path}`);
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.upload.onprogress = (event) => {
+      if (onProgress && event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(xhr.responseText);
+      } catch {
+        // ignore
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(parsed as T);
+        return;
+      }
+      const detail = (parsed as { detail?: unknown } | null)?.detail;
+      reject(new Error(typeof detail === 'string' ? detail : `上傳失敗（${xhr.status}）`));
+    };
+
+    xhr.onerror = () => reject(new Error('上傳失敗，請檢查網路連線'));
+    xhr.onabort = () => reject(new Error('上傳已取消'));
+
+    xhr.send(form);
+  });
+}
+
 export const api = {
   getTags: () => apiFetch<Tag[]>('/api/tags'),
   createLink: (payload: CreateLinkIn) =>
@@ -122,6 +179,56 @@ export const api = {
   deleteBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),
   createTag: (name: string) => apiFetch<Tag>(`/api/tags?name=${encodeURIComponent(name)}`, { method: 'POST' }),
   deleteTag: (tagId: number) => apiFetch<{ message: string; tag_id: number }>(`/api/tags/${tagId}`, { method: 'DELETE' }),
+
+  // PIN-protected file sharing.
+  uploadSharedFile: (
+    payload: { file: File; note?: string | null; expires_at?: string | null; pin?: string | null },
+    onProgress?: (percent: number) => void,
+  ) => {
+    const form = new FormData();
+    form.append('file', payload.file);
+    if (payload.note) form.append('note', payload.note);
+    if (payload.expires_at) form.append('expires_at', payload.expires_at);
+    if (payload.pin) form.append('pin', payload.pin);
+    return uploadWithProgress<SharedFileCreated>('/api/files', form, onProgress);
+  },
+  listSharedFiles: (params: {
+    query?: string;
+    status?: 'active' | 'disabled' | 'expired' | 'deleted' | 'all';
+    limit?: number;
+    offset?: number;
+  }) => {
+    const sp = new URLSearchParams();
+    if (params.query) sp.set('query', params.query);
+    if (params.status) sp.set('status', params.status);
+    if (params.limit) sp.set('limit', String(params.limit));
+    if (params.offset) sp.set('offset', String(params.offset));
+    const qs = sp.toString();
+    return apiFetch<SharedFileList>(`/api/files${qs ? `?${qs}` : ''}`);
+  },
+  updateSharedFile: (code: string, patch: { expires_at?: string | null; note?: string | null }) =>
+    apiFetch<SharedFile>(`/api/files/${encodeURIComponent(code)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  /** Issue a new PIN. The previous one stops working immediately. */
+  regenerateSharedFilePin: (code: string) =>
+    apiFetch<{ code: string; pin: string }>(`/api/files/${encodeURIComponent(code)}/regenerate-pin`, {
+      method: 'POST',
+    }),
+  disableSharedFile: (code: string) =>
+    apiFetch<{ code: string; status: string }>(`/api/files/${encodeURIComponent(code)}/disable`, {
+      method: 'POST',
+    }),
+  enableSharedFile: (code: string) =>
+    apiFetch<{ code: string; status: string }>(`/api/files/${encodeURIComponent(code)}/enable`, {
+      method: 'POST',
+    }),
+  /** Erase the stored bytes. The record stays for the audit trail. */
+  deleteSharedFile: (code: string) =>
+    apiFetch<{ message: string; code: string }>(`/api/files/${encodeURIComponent(code)}`, {
+      method: 'DELETE',
+    }),
 
   // Admins live in the application database and are served by the backend API.
   // (They used to be Cloud Functions backed by Firestore.)
