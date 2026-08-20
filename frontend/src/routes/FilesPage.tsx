@@ -24,6 +24,8 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import {
   IconAlertTriangle,
+  IconArrowDown,
+  IconArrowUp,
   IconBan,
   IconCalendar,
   IconCheck,
@@ -512,6 +514,28 @@ export function FilesPage() {
     });
   }
 
+  /**
+   * Move one file up or down within its share.
+   *
+   * Up/down buttons rather than drag-and-drop: they need no library, work with
+   * a keyboard, and a share holds a handful of files, not hundreds.
+   */
+  async function moveFile(share: FileShare, fileId: number, direction: -1 | 1) {
+    const ids = share.files.filter((f) => f.status === 'active').map((f) => f.id);
+    const from = ids.indexOf(fileId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+
+    try {
+      const updated = await api.reorderShareFiles(share.code, ids);
+      setItems((prev) => prev.map((s) => (s.code === updated.code ? updated : s)));
+    } catch (e) {
+      notifications.show({ color: 'red', message: e instanceof Error ? e.message : '排序失敗' });
+      load();
+    }
+  }
+
   function toggleExpanded(code: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -882,8 +906,35 @@ export function FilesPage() {
                                   這個分享目前沒有檔案，公開連結不會顯示內容。
                                 </Text>
                               ) : (
-                                liveFiles.map((f) => (
+                                liveFiles.map((f, index) => (
                                   <Group key={f.id} gap="sm" wrap="nowrap">
+                                    {share.status !== 'deleted' && liveFiles.length > 1 && (
+                                      <Group gap={2} wrap="nowrap">
+                                        <ActionIcon
+                                          variant="subtle"
+                                          color="gray"
+                                          size="sm"
+                                          aria-label="上移"
+                                          disabled={index === 0}
+                                          onClick={() => moveFile(share, f.id, -1)}
+                                        >
+                                          <IconArrowUp size={16} />
+                                        </ActionIcon>
+                                        <ActionIcon
+                                          variant="subtle"
+                                          color="gray"
+                                          size="sm"
+                                          aria-label="下移"
+                                          disabled={index === liveFiles.length - 1}
+                                          onClick={() => moveFile(share, f.id, 1)}
+                                        >
+                                          <IconArrowDown size={16} />
+                                        </ActionIcon>
+                                      </Group>
+                                    )}
+                                    <Text size="sm" c="dimmed" style={{ minWidth: 20 }}>
+                                      {index + 1}.
+                                    </Text>
                                     <Text size="sm" style={{ flex: 1, wordBreak: 'break-all' }}>
                                       {f.filename}
                                     </Text>
@@ -908,6 +959,11 @@ export function FilesPage() {
                                     )}
                                   </Group>
                                 ))
+                              )}
+                              {liveFiles.length > 1 && share.status !== 'deleted' && (
+                                <Text size="xs" c="dimmed" mt={4}>
+                                  此順序就是對方看到的順序，也是「全部下載」壓縮檔內的順序。
+                                </Text>
                               )}
                             </Stack>
                           </Collapse>

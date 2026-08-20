@@ -38,6 +38,7 @@ export type SharedFile = {
   content_type: string;
   size_bytes: number;
   status: 'active' | 'deleted';
+  sort_order: number;
   download_count: number;
   created_at: string;
 };

@@ -31,6 +31,9 @@
 
 - **只有管理員能上傳**；拿到連結的人只能下載，不能瀏覽清單、修改或刪除任何東西
 - **一個連結可放多個檔案**，共用同一組 PIN 碼；要分享七份文件就是一個連結一組 PIN，不是七個。事後還能再加入或移除檔案，連結與 PIN 都不變
+- **檔案順序可自訂**（管理頁展開該分享後用上下箭頭調整）。這個順序就是對方看到的順序，也是「全部下載」壓縮檔內的順序；新上傳的檔案一律排在最後
+- **「全部下載」是後端即時串出的一個 zip**，不是在頁面上連續觸發多個下載——後者會被瀏覽器的「多重下載」政策擋掉，而且分次觸發會失去使用者手勢的授權。壓縮檔邊產生邊送出，不佔記憶體也不落地；因為多半是已壓縮過的辦公文件，內容採 STORED 不再壓縮，省下容器僅有的 CPU
+- 輸入正確 PIN 後，頁面會**收起 PIN 說明與提示文字**，只留檔案清單
 - 分享連結為 `url.taipei/f/{代碼}`，與短網址各自獨立，代碼不會互相衝突，同樣**永不重用**
 - **PIN 碼為 8 碼英數字組合**（可自訂或自動產生）。自動產生時會排除容易看錯的 `O`、`I`、`0`、`1`，並保證至少各含一個英文字母與數字；輸入時不分大小寫
 - PIN 碼以 PBKDF2 雜湊儲存，**建立當下顯示一次後即無法再查看**；忘記時只能重新產生一組新的（舊的立即失效）
@@ -182,6 +185,7 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 | `POST /api/shares/{code}/upload-session` | 詢問該把檔案位元組送到哪裡，回傳 `mode=resumable\|proxy` 與上傳網址 |
 | `POST /api/shares/{code}/files` | 經後端轉送上傳（`file`＋`upload_token`；受 32 MiB 限制） |
 | `POST /api/shares/{code}/files/finalize` | 瀏覽器直傳完成後登錄檔案（`upload_token`） |
+| `PATCH /api/shares/{code}/files/order` | 設定檔案順序（`file_ids` 須完整列出全部檔案，避免舊頁面把別人剛加的檔案排掉） |
 | `DELETE /api/shares/{code}/files/{file_id}` | 永久刪除單一檔案，其餘不受影響 |
 | `POST /api/shares/{code}/regenerate-pin` | 重新產生 PIN 碼（舊碼立即失效，並解除鎖定） |
 | `POST /api/shares/{code}/disable`、`/enable` | 停用／重新啟用分享 |
@@ -190,6 +194,7 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 | `GET /f/{code}?lang=` | 檔案下載頁（民眾端，無需登入；中／英／日／韓） |
 | `POST /f/{code}/verify` | 驗證 PIN 碼，回傳檔案清單與 5 分鐘有效的下載網址（民眾端）；錯誤回傳 `{"detail":{"error":"wrong_pin\|locked\|not_found",…}}` 供前端翻譯 |
 | `GET /f/{code}/download/{file_id}?token=` | 下載單一檔案（民眾端，需有效下載權杖） |
+| `GET /f/{code}/download-all?token=` | 整包下載為 zip（民眾端，需有效下載權杖） |
 | `GET /{code}` | 轉址（民眾端，無需登入） |
 
 ## 相關文件

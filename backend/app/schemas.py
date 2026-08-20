@@ -73,6 +73,7 @@ class SharedFileOut(BaseModel):
     content_type: str
     size_bytes: int
     status: str
+    sort_order: int
     download_count: int
     created_at: dt.datetime
 
@@ -148,6 +149,12 @@ class UploadFinalizeIn(BaseModel):
     upload_token: str = Field(..., min_length=1, max_length=512)
 
 
+class FileOrderIn(BaseModel):
+    """Every active file in the share, in the order they should appear."""
+
+    file_ids: list[int] = Field(..., min_length=1)
+
+
 class PinOut(BaseModel):
     code: str
     pin: str
@@ -166,6 +173,7 @@ class VerifiedFileOut(BaseModel):
 
 class FileVerifyOut(BaseModel):
     files: list[VerifiedFileOut]
+    download_all_url: str
     expires_in: int
 
 

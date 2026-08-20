@@ -281,6 +281,120 @@ def test_large_downloads_omit_content_length(files_client, db_session):
     assert "content-length" not in {k.lower() for k in big.headers}
 
 
+def test_download_all_returns_one_archive(files_client):
+    """One request, one archive.
+
+    Firing a download per file does not survive the browser's block on repeated
+    automatic downloads, which is why this endpoint exists.
+    """
+    import io
+    import zipfile
+
+    created = create_share(files_client).json()
+    code = created["code"]
+    contents = {"報告.pdf": b"first file", "附件.docx": b"second file", "notes.txt": b"third"}
+    for name, body in contents.items():
+        add_file(files_client, code, name=name, content=body)
+
+    verified = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]}).json()
+    r = files_client.get(verified["download_all_url"])
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    assert f"{code}.zip" in r.headers["content-disposition"]
+
+    with zipfile.ZipFile(io.BytesIO(r.content)) as archive:
+        assert archive.testzip() is None
+        assert archive.namelist() == list(contents)
+        for name, body in contents.items():
+            assert archive.read(name) == body
+
+    # Every file in the archive counts as downloaded.
+    share = files_client.get("/api/shares").json()["items"][0]
+    assert share["download_count"] == 3
+
+
+def test_download_all_requires_a_valid_token(files_client):
+    code = make_share(files_client)["code"]
+    assert files_client.get(f"/f/{code}/download-all?token=forged.abc").status_code == 403
+
+
+def test_archive_gives_duplicate_filenames_distinct_entries(files_client):
+    import io
+    import zipfile
+
+    created = create_share(files_client).json()
+    code = created["code"]
+    add_file(files_client, code, name="附件.pdf", content=b"one")
+    add_file(files_client, code, name="附件.pdf", content=b"two")
+
+    verified = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]}).json()
+    r = files_client.get(verified["download_all_url"])
+
+    with zipfile.ZipFile(io.BytesIO(r.content)) as archive:
+        assert archive.namelist() == ["附件.pdf", "附件 (2).pdf"]
+        assert archive.read("附件.pdf") == b"one"
+        assert archive.read("附件 (2).pdf") == b"two"
+
+
+def test_files_can_be_reordered(files_client):
+    import io
+    import zipfile
+
+    created = create_share(files_client).json()
+    code = created["code"]
+    for name in ("a.pdf", "b.pdf", "c.pdf"):
+        add_file(files_client, code, name=name, content=name.encode())
+
+    ids = [f["id"] for f in files_client.get("/api/shares").json()["items"][0]["files"]]
+    reversed_ids = list(reversed(ids))
+
+    r = files_client.patch(f"/api/shares/{code}/files/order", json={"file_ids": reversed_ids})
+    assert r.status_code == 200
+    assert [f["filename"] for f in r.json()["files"]] == ["c.pdf", "b.pdf", "a.pdf"]
+
+    # The recipient sees the chosen order, and so does the archive.
+    verified = files_client.post(f"/f/{code}/verify", json={"pin": created["pin"]}).json()
+    assert [f["filename"] for f in verified["files"]] == ["c.pdf", "b.pdf", "a.pdf"]
+
+    archive_bytes = files_client.get(verified["download_all_url"]).content
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        assert archive.namelist() == ["c.pdf", "b.pdf", "a.pdf"]
+
+
+def test_newly_added_files_append_after_a_reorder(files_client):
+    created = create_share(files_client).json()
+    code = created["code"]
+    for name in ("a.pdf", "b.pdf"):
+        add_file(files_client, code, name=name, content=name.encode())
+
+    ids = [f["id"] for f in files_client.get("/api/shares").json()["items"][0]["files"]]
+    files_client.patch(f"/api/shares/{code}/files/order", json={"file_ids": list(reversed(ids))})
+
+    add_file(files_client, code, name="c.pdf", content=b"c")
+    share = files_client.get("/api/shares").json()["items"][0]
+    assert [f["filename"] for f in share["files"]] == ["b.pdf", "a.pdf", "c.pdf"]
+
+
+def test_reorder_rejects_an_incomplete_list(files_client):
+    code = create_share(files_client).json()["code"]
+    for name in ("a.pdf", "b.pdf"):
+        add_file(files_client, code, name=name, content=name.encode())
+
+    ids = [f["id"] for f in files_client.get("/api/shares").json()["items"][0]["files"]]
+
+    # A stale page must not be able to drop a file someone else just added.
+    assert (
+        files_client.patch(f"/api/shares/{code}/files/order", json={"file_ids": ids[:1]}).status_code
+        == 422
+    )
+    assert (
+        files_client.patch(
+            f"/api/shares/{code}/files/order", json={"file_ids": ids + [9999]}
+        ).status_code
+        == 422
+    )
+
+
 def test_pin_check_is_case_insensitive(files_client):
     created = make_share(files_client)
     r = files_client.post(f"/f/{created['code']}/verify", json={"pin": created["pin"].lower()})

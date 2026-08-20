@@ -297,6 +297,16 @@ export const api = {
     apiFetch<{ code: string; status: string }>(`/api/shares/${encodeURIComponent(code)}/enable`, {
       method: 'POST',
     }),
+  /**
+   * Set the order files appear in, for the recipient and inside the archive.
+   * Must list every active file — the backend rejects a partial list so a
+   * stale page cannot drop a file someone else added.
+   */
+  reorderShareFiles: (code: string, fileIds: number[]) =>
+    apiFetch<FileShare>(`/api/shares/${encodeURIComponent(code)}/files/order`, {
+      method: 'PATCH',
+      body: JSON.stringify({ file_ids: fileIds }),
+    }),
   /** Erase one file's bytes, leaving the rest of the share intact. */
   deleteShareFile: (code: string, fileId: number) =>
     apiFetch<{ message: string; code: string }>(

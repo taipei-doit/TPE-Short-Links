@@ -59,6 +59,7 @@ from app.schemas import (
     FileShareListOut,
     FileShareOut,
     FileShareUpdateIn,
+    FileOrderIn,
     FileVerifyIn,
     FileVerifyOut,
     PinOut,
@@ -233,6 +234,7 @@ def file_to_out(record: SharedFile) -> SharedFileOut:
         content_type=record.content_type,
         size_bytes=record.size_bytes,
         status=record.status,
+        sort_order=record.sort_order,
         download_count=record.download_count,
         created_at=record.created_at,
     )
@@ -634,6 +636,9 @@ def create_upload_session(
 def attach_file(
     share: FileShare, claim: dict, size_bytes: int, content_type: str, db: Session
 ) -> SharedFile:
+    # One past the current maximum, so an upload always lands at the end of
+    # whatever order the admin has arranged.
+    next_position = max((f.sort_order for f in share.files), default=0) + 1
     record = SharedFile(
         share_id=share.id,
         filename=claim["name"],
@@ -641,6 +646,7 @@ def attach_file(
         size_bytes=size_bytes,
         storage_path=claim["path"],
         status="active",
+        sort_order=next_position,
         download_count=0,
     )
     db.add(record)
@@ -725,6 +731,37 @@ def finalize_upload(
     return file_to_out(attach_file(share, claim, size_bytes, content_type, db))
 
 
+@router.patch("/api/shares/{code}/files/order", response_model=FileShareOut)
+def reorder_share_files(
+    payload: FileOrderIn,
+    code: str = Path(..., min_length=1, max_length=32),
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> FileShareOut:
+    """Set the order the files appear in, for the recipient and in the archive.
+
+    The request must list every active file exactly once, so a stale page
+    cannot silently drop a file that someone else added in the meantime.
+    """
+    share = writable_share(code, db)
+
+    live = {f.id: f for f in active_files(share)}
+    requested = list(payload.file_ids)
+    if sorted(requested) != sorted(live):
+        raise HTTPException(
+            status_code=422, detail="檔案清單已變動，請重新整理後再排序"
+        )
+
+    for position, file_id in enumerate(requested, start=1):
+        live[file_id].sort_order = position
+        db.add(live[file_id])
+    share.updated_at = now_utc()
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+    return share_to_out(share)
+
+
 @router.delete("/api/shares/{code}/files/{file_id}")
 def delete_share_file(
     code: str = Path(..., min_length=1, max_length=32),
@@ -790,9 +827,10 @@ LANDING_TEMPLATE = """<!doctype html>
               font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
               border:1px solid #cbd5e1; border-radius:10px; text-transform:uppercase; }
       input:focus { outline:none; border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,0.15); }
-      button[type="submit"], .allbtn { width:100%; margin-top:14px; padding:12px 16px; font-size:16px;
-                              font-weight:600; color:#fff; background:#2563eb; border:0; border-radius:10px;
-                              cursor:pointer; font-family:inherit; }
+      button[type="submit"], .allbtn { display:block; width:100%; margin-top:14px; padding:12px 16px;
+                              font-size:16px; font-weight:600; color:#fff; background:#2563eb; border:0;
+                              border-radius:10px; cursor:pointer; font-family:inherit; text-align:center;
+                              text-decoration:none; box-sizing:border-box; }
       button[type="submit"]:hover, .allbtn:hover { background:#1d4ed8; }
       button[type="submit"]:disabled { background:#94a3b8; cursor:not-allowed; }
       .msg { margin-top:14px; font-size:15px; min-height:22px; }
@@ -830,10 +868,10 @@ LANDING_TEMPLATE = """<!doctype html>
         <div id="results" class="hidden">
           <h2 id="list-heading" style="font-size:18px;margin:8px 0 0;" data-i18n="list_heading">__LIST_HEADING__</h2>
           <ul class="filelist" id="filelist"></ul>
-          <button type="button" class="allbtn hidden" id="downloadall" data-i18n="download_all">__DOWNLOAD_ALL__</button>
+          <a class="allbtn hidden" id="downloadall" href="#" data-i18n="download_all">__DOWNLOAD_ALL__</a>
         </div>
         <div class="msg" id="msg" role="status" aria-live="polite"></div>
-        <p class="hint" data-i18n="hint">__HINT__</p>
+        <p class="hint" id="hint" data-i18n="hint">__HINT__</p>
       </div>
     </div>
     <script>
@@ -855,6 +893,8 @@ LANDING_TEMPLATE = """<!doctype html>
         var results = document.getElementById('results');
         var filelist = document.getElementById('filelist');
         var downloadAll = document.getElementById('downloadall');
+        var intro = document.getElementById('intro');
+        var hint = document.getElementById('hint');
         var lastError = null;
         var files = [];
 
@@ -899,6 +939,21 @@ LANDING_TEMPLATE = """<!doctype html>
             filelist.appendChild(li);
           }
           downloadAll.className = files.length > 1 ? 'allbtn' : 'allbtn hidden';
+        }
+
+        function unlock(data) {
+          files = data.files || [];
+          // One request, one archive. Firing a download per file does not
+          // survive the browser's block on repeated automatic downloads.
+          downloadAll.href = data.download_all_url;
+          // The PIN instructions have served their purpose.
+          form.className = 'hidden';
+          intro.className = 'hidden';
+          hint.className = 'hidden';
+          results.className = '';
+          renderFiles();
+          msg.className = 'msg ok';
+          msg.textContent = t('unlocked');
         }
 
         function renderError() {
@@ -952,20 +1007,6 @@ LANDING_TEMPLATE = """<!doctype html>
           input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
         });
 
-        downloadAll.addEventListener('click', function () {
-          // Staggered: browsers drop downloads fired all at once.
-          files.forEach(function (file, index) {
-            setTimeout(function () {
-              var link = document.createElement('a');
-              link.href = file.download_url;
-              link.setAttribute('download', file.filename);
-              document.body.appendChild(link);
-              link.click();
-              link.remove();
-            }, index * 700);
-          });
-        });
-
         form.addEventListener('submit', function (event) {
           event.preventDefault();
           lastError = null;
@@ -992,12 +1033,7 @@ LANDING_TEMPLATE = """<!doctype html>
                 }
                 throw { key: 'err_generic' };
               }
-              files = result.data.files || [];
-              form.className = 'hidden';
-              results.className = '';
-              renderFiles();
-              msg.className = 'msg ok';
-              msg.textContent = t('unlocked');
+              unlock(result.data);
             })
             .catch(function (error) {
               lastError = error && error.key ? error : { key: 'err_network' };
@@ -1188,7 +1224,83 @@ def verify_share_pin(
             )
             for f in active_files(share)
         ],
+        download_all_url=f"/f/{quote(share.code)}/download-all?token={quote(token)}",
         expires_in=ttl,
+    )
+
+
+def unique_archive_names(records: list[SharedFile]) -> list[tuple[SharedFile, str]]:
+    """Give every entry a distinct name inside the archive.
+
+    Two files in one share can legitimately share a filename; inside a zip that
+    would produce a duplicate entry most tools silently mishandle.
+    """
+    used: set[str] = set()
+    named: list[tuple[SharedFile, str]] = []
+    for record in records:
+        name = record.filename
+        if name in used:
+            stem, dot, extension = name.rpartition(".")
+            base, suffix = (stem, f".{extension}") if dot else (name, "")
+            counter = 2
+            while f"{base} ({counter}){suffix}" in used:
+                counter += 1
+            name = f"{base} ({counter}){suffix}"
+        used.add(name)
+        named.append((record, name))
+    return named
+
+
+@router.get("/f/{code}/download-all")
+def download_share_archive(
+    code: str = Path(..., min_length=1, max_length=32),
+    token: str = Query(..., min_length=1, max_length=256),
+    db: Session = Depends(get_db),
+):
+    """Stream every file in the share as one zip.
+
+    Firing one download per file from the page does not work: browsers block
+    repeated automatic downloads, and the permission to do so does not survive
+    the timeouts needed to stagger them. One request producing one archive
+    sidesteps all of that.
+
+    The archive is generated as it is sent -- nothing is buffered in memory or
+    written to disk -- and entries are stored rather than deflated, since these
+    are usually already-compressed office documents and the container has one
+    CPU to spare.
+    """
+    import zipfile
+
+    from zipstream import ZipStream
+
+    if not check_download_token(code, token):
+        raise HTTPException(status_code=403, detail="下載連結已失效，請重新輸入 PIN 碼")
+
+    share = get_downloadable(code, db)
+    if share is None:
+        return redirect_to_not_found()
+
+    records = active_files(share)
+    storage = get_storage()
+
+    archive = ZipStream(compress_type=zipfile.ZIP_STORED)
+    for record, arcname in unique_archive_names(records):
+        # Bind the path per iteration; the generator runs long after this loop.
+        archive.add(storage.stream(record.storage_path), arcname, size=record.size_bytes)
+        record.download_count += 1
+        db.add(record)
+    db.commit()
+
+    # No Content-Length: the archive's size is not known up front, and a
+    # fixed-length response would hit Cloud Run's 32 MiB ceiling anyway.
+    return StreamingResponse(
+        archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": content_disposition(f"{share.code}.zip"),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

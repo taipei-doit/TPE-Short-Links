@@ -87,7 +87,11 @@ class FileShare(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     files: Mapped[list["SharedFile"]] = relationship(
-        back_populates="share", cascade="all, delete-orphan", order_by="SharedFile.id"
+        back_populates="share",
+        cascade="all, delete-orphan",
+        # Admin-defined order, falling back to upload order for anything that
+        # has never been reordered.
+        order_by="SharedFile.sort_order, SharedFile.id",
     )
 
 
@@ -108,6 +112,9 @@ class SharedFile(Base):
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     # active | deleted (bytes erased, row kept for the audit trail)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
+    # Position within the share. New files get one past the current maximum, so
+    # they append; reordering rewrites the whole run as 1..N.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     download_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
