@@ -35,6 +35,7 @@ import {
   IconKey,
   IconLock,
   IconPlus,
+  IconQrcode,
   IconRefresh,
   IconTrash,
   IconUpload,
@@ -42,6 +43,7 @@ import {
 import dayjs from 'dayjs';
 import { Fragment, useEffect, useState } from 'react';
 
+import { QrCodeDialog } from '../components/QrCodeDialog';
 import { api } from '../api/client';
 import type { FileShare } from '../api/types';
 
@@ -253,6 +255,7 @@ export function FilesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [qrShare, setQrShare] = useState<FileShare | null>(null);
 
   const limit = 20;
   const [page, setPage] = useState(1);
@@ -817,6 +820,16 @@ export function FilesPage() {
                             </Text>
                           ) : (
                             <Group gap="xs" wrap="nowrap">
+                              <Tooltip label="下載 QR Code" withArrow>
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="blue"
+                                  aria-label="下載 QR Code"
+                                  onClick={() => setQrShare(share)}
+                                >
+                                  <IconQrcode size={18} />
+                                </ActionIcon>
+                              </Tooltip>
                               {share.status === 'disabled' ? (
                                 <Tooltip label="重新啟用" withArrow>
                                   <ActionIcon
@@ -984,6 +997,12 @@ export function FilesPage() {
           </Group>
         </Stack>
       </Card>
+      <QrCodeDialog
+        opened={qrShare !== null}
+        onClose={() => setQrShare(null)}
+        code={qrShare?.code ?? ''}
+        shortUrl={qrShare?.share_url ?? ''}
+      />
     </Stack>
   );
 }
