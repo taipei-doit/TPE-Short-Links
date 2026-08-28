@@ -16,10 +16,11 @@ import { DateTimePicker } from '@mantine/dates';
 import '@mantine/dates/styles.css';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconBan, IconCalendar, IconCheck, IconPencil, IconRefresh } from '@tabler/icons-react';
+import { IconBan, IconCalendar, IconCheck, IconPencil, IconQrcode, IconRefresh } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 
+import { QrCodeDialog } from '../components/QrCodeDialog';
 import { api } from '../api/client';
 import type { Link, Tag } from '../api/types';
 
@@ -141,6 +142,7 @@ function statusBadge(link: Link) {
 }
 
 export function ManagePage() {
+  const [qrLink, setQrLink] = useState<Link | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -514,6 +516,16 @@ export function ManagePage() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs" wrap="nowrap">
+                      <ActionIcon
+                        variant="subtle"
+                        color="blue"
+                        onClick={() => setQrLink(l)}
+                        aria-label="下載 QR Code"
+                        size="md"
+                        radius="md"
+                      >
+                        <IconQrcode size={18} />
+                      </ActionIcon>
                       {l.status === 'disabled' ? (
                         <ActionIcon
                           variant="subtle"
@@ -578,6 +590,12 @@ export function ManagePage() {
           <Pagination value={page} onChange={setPage} total={totalPages} size="md" radius="md" />
         </Group>
       </Card>
+      <QrCodeDialog
+        opened={qrLink !== null}
+        onClose={() => setQrLink(null)}
+        code={qrLink?.code ?? ''}
+        shortUrl={qrLink?.short_url ?? ''}
+      />
     </Stack>
   );
 }
