@@ -7,6 +7,7 @@ import { modals } from '@mantine/modals';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 
+import { QrCodeDialog } from '../components/QrCodeDialog';
 import { api } from '../api/client';
 import type { CreateLinkIn, Link, Tag } from '../api/types';
 
@@ -26,7 +27,7 @@ export function CreatePage() {
   const [useManualCode, setUseManualCode] = useState(false);
 
   const [result, setResult] = useState<Link | null>(null);
-  const [downloadingQr, setDownloadingQr] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   useEffect(() => {
     api
@@ -307,18 +308,7 @@ export function CreatePage() {
               <Button
                 variant="outline"
                 leftSection={<IconQrcode size={18} />}
-                loading={downloadingQr}
-                onClick={async () => {
-                  setDownloadingQr(true);
-                  try {
-                    await api.downloadQrCode(result.code);
-                  } catch (e) {
-                    const msg = e instanceof Error ? e.message : 'QR Code 下載失敗';
-                    notifications.show({ color: 'red', message: msg });
-                  } finally {
-                    setDownloadingQr(false);
-                  }
-                }}
+                onClick={() => setQrOpen(true)}
                 size="md"
                 radius="md"
               >
@@ -326,6 +316,12 @@ export function CreatePage() {
               </Button>
             </Group>
           </Stack>
+          <QrCodeDialog
+            opened={qrOpen}
+            onClose={() => setQrOpen(false)}
+            code={result.code}
+            shortUrl={result.short_url}
+          />
         </Card>
       ) : null}
     </Stack>
