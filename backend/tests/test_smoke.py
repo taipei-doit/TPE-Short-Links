@@ -63,6 +63,29 @@ def test_404_page_served_directly_no_loop(client: TestClient):
     assert "找不到您要找的頁面" in res.text
 
 
+def test_qr_studio_redirects_to_frontend(client: TestClient):
+    res = client.get("/qr/X123", follow_redirects=False)
+    assert res.status_code == 302
+    assert res.headers["location"].endswith("/qr/X123")
+
+    res = client.get("/qr/f/AB12CD", follow_redirects=False)
+    assert res.status_code == 302
+    assert res.headers["location"].endswith("/qr/f/AB12CD")
+
+    # Bare /qr and garbage targets both land on the studio's input page.
+    for path in ("/qr", "/qr/not%20a%20code!!"):
+        res = client.get(path, follow_redirects=False)
+        assert res.status_code == 302
+        assert res.headers["location"].endswith("/qr")
+
+
+def test_qr_code_is_reserved(client: TestClient):
+    payload = {"original_url": "https://example.com/qr", "tag_id": 1, "expires_at": None, "note": None, "code": "qr"}
+    res = client.post("/api/links", json=payload)
+    assert res.status_code == 422
+    assert "reserved" in res.text
+
+
 def test_patch_original_url(client: TestClient):
     future = (dt.datetime.now(dt.UTC) + dt.timedelta(days=30)).isoformat()
     create_link(client, "https://example.com/old", code="D123", expires_at=future)

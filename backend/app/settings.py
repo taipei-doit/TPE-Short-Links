@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     SHORTLINK_CODE_LENGTH: int = 4
     RESERVED_CODES: str = ""
     PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # Where the static admin/public frontend is hosted. /qr/{code} on this
+    # service 302s there so agencies get a memorable url.taipei address for
+    # the QR style studio.
+    FRONTEND_BASE_URL: str = "https://url-taipei.web.app"
     # Firebase:
     # - FIREBASE_PROJECT_ID is used to verify Firebase ID tokens (token `aud` claim).
     # - FIREBASE_APP_ID is the Web app's App ID (used by the frontend Firebase config); it is not used
@@ -52,9 +56,12 @@ class Settings(BaseSettings):
 
     def reserved_codes_set(self) -> set[str]:
         raw = (self.RESERVED_CODES or "").strip()
-        if not raw:
-            return set()
-        return {c.strip() for c in raw.split(",") if c.strip()}
+        codes = {c.strip() for c in raw.split(",") if c.strip()} if raw else set()
+        # /qr/* is claimed by the QR style studio route, so a short link named
+        # "qr" could never be reached. Case variants are technically reachable
+        # (routing is case-sensitive) but reserved anyway to avoid confusion.
+        codes |= {"qr", "QR", "Qr", "qR"}
+        return codes
 
 
 @lru_cache

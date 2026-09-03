@@ -4,6 +4,7 @@ import csv
 import datetime as dt
 import io
 import logging
+import re
 import secrets
 from typing import Literal
 
@@ -728,6 +729,30 @@ def update_link(
 @app.get("/404.html")
 def not_found_page() -> HTMLResponse:
     return HTMLResponse(content=NOT_FOUND_HTML, status_code=200)
+
+
+# The QR style studio is a public, unauthenticated page in the static frontend.
+# These routes only exist so agencies can hand out url.taipei/qr/{code} — the
+# actual page (and all QR generation) runs client-side on Firebase Hosting.
+# Declared before /{code}; the code "qr" is reserved (see Settings).
+_QR_TARGET_RE = re.compile(r"^(f/)?[A-Za-z0-9_-]{1,32}$")
+
+
+@app.get("/qr")
+def qr_studio_home() -> RedirectResponse:
+    settings = get_settings()
+    return RedirectResponse(url=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/qr", status_code=302)
+
+
+@app.get("/qr/{target:path}")
+def qr_studio(target: str) -> RedirectResponse:
+    settings = get_settings()
+    base = settings.FRONTEND_BASE_URL.rstrip("/")
+    # Anything that isn't a plausible short-link or file-share code just lands
+    # on the studio's own input page — no error surface needed here.
+    if not _QR_TARGET_RE.match(target):
+        return RedirectResponse(url=f"{base}/qr", status_code=302)
+    return RedirectResponse(url=f"{base}/qr/{target}", status_code=302)
 
 
 @app.get("/{code}")
