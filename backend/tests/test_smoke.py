@@ -107,6 +107,16 @@ def test_qr_studio_proxies_frontend(client: TestClient, monkeypatch):
     main_module._frontend_asset_cache.clear()
 
 
+def test_qr_status_public_lookup(client: TestClient):
+    create_link(client, "https://example.com/qrs", code="QS123")
+    assert client.get("/api/qr-status/QS123").json() == {"state": "active"}
+    assert client.get("/api/qr-status/QS404").json() == {"state": "not_found"}
+    assert client.get("/api/qr-status/qr").json() == {"state": "not_found"}
+
+    assert client.post("/api/links/QS123/disable").status_code == 200
+    assert client.get("/api/qr-status/QS123").json() == {"state": "disabled"}
+
+
 def test_qr_code_is_reserved(client: TestClient):
     payload = {"original_url": "https://example.com/qr", "tag_id": 1, "expires_at": None, "note": None, "code": "qr"}
     res = client.post("/api/links", json=payload)

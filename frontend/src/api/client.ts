@@ -215,6 +215,8 @@ export const api = {
   },
   downloadQrCode: (code: string) =>
     downloadFile(`/api/links/${encodeURIComponent(code)}/qrcode`, `qrcode_${code}.png`),
+  /** 公開端點，QR 產生器用來提醒代碼打錯或已失效；target 可為 "CODE" 或 "f/CODE"。 */
+  getQrStatus: (target: string) => apiFetch<{ state: string }>(`/api/qr-status/${target}`),
   listBlockedWords: () => apiFetch<string[]>('/api/blocked-words'),
   addBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words?word=${encodeURIComponent(word)}`, { method: 'POST' }),
   deleteBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),

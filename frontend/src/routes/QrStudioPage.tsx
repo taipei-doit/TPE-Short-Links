@@ -14,10 +14,11 @@ import {
   Title,
 } from '@mantine/core';
 import { IconAlertTriangle, IconDownload, IconInfoCircle, IconQrcode } from '@tabler/icons-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 
+import { api } from '../api/client';
 import { DEFAULT_PRESET_ID, QR_PRESETS, getPreset } from '../qr/presets';
 import { renderQrSvg, svgToPngBlob, type Ecl, type QrStyle } from '../qr/render';
 
@@ -155,9 +156,39 @@ function StudioLanding({ hadInvalidTarget }: { hadInvalidTarget: boolean }) {
 
 type LogoMode = 'none' | 'taipei' | 'custom';
 
+type LinkState = 'active' | 'disabled' | 'expired' | 'not_found' | 'unknown';
+
+const LINK_STATE_WARNINGS: Partial<Record<LinkState, string>> = {
+  not_found: '查無此代碼：這個短網址目前不存在，掃描只會看到 404 頁。請先確認代碼拼字，或先到管理介面建立短網址。',
+  expired: '這個短網址已過期，掃描目前會導向 404 頁。QR 圖不會變，延長效期後即可繼續使用；若是要補印既有文宣可放心下載。',
+  disabled: '這個短網址目前是停用狀態，掃描會導向 404 頁。QR 圖不會變，重新啟用後即可繼續使用。',
+};
+
 function StudioEditor({ target }: { target: string }) {
   const targetUrl = `${PUBLIC_BASE}/${target}`;
   const isFileShare = target.startsWith('f/');
+
+  // 只提醒、不阻擋：過期或停用的連結可能要補印文宣，仍允許下載。
+  const [linkState, setLinkState] = useState<LinkState>('unknown');
+  useEffect(() => {
+    let alive = true;
+    setLinkState('unknown');
+    api
+      .getQrStatus(target)
+      .then((r) => {
+        if (!alive) return;
+        const s = r.state;
+        setLinkState(
+          s === 'active' || s === 'disabled' || s === 'expired' || s === 'not_found' ? s : 'unknown',
+        );
+      })
+      .catch(() => {
+        // 查不到狀態（離線、舊版後端）就不顯示提醒
+      });
+    return () => {
+      alive = false;
+    };
+  }, [target]);
 
   const [presetId, setPresetId] = useState<string>(DEFAULT_PRESET_ID);
   const [customStyle, setCustomStyle] = useState<QrStyle>({ ...getPreset(DEFAULT_PRESET_ID).style });
@@ -277,6 +308,12 @@ function StudioEditor({ target }: { target: string }) {
           ；圖檔完全在您的瀏覽器產生，不會上傳任何資料。
         </Text>
       </div>
+
+      {LINK_STATE_WARNINGS[linkState] && (
+        <Alert color="yellow" icon={<IconAlertTriangle size={18} />} title="連結狀態提醒">
+          {LINK_STATE_WARNINGS[linkState]}
+        </Alert>
+      )}
 
       <Card withBorder padding="xl" radius="md" style={cardStyle}>
         <Stack gap="md">

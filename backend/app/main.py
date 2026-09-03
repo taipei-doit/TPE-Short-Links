@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_firebase_user, invalidate_admin_cache
 from app.db.session import get_db
 from app.files import router as files_router
-from app.models import AdminUser, BlockedWord, ReservedCode, ShortLink, Tag
+from app.models import AdminUser, BlockedWord, FileShare, ReservedCode, ShortLink, Tag
 from app.pages import NOT_FOUND_HTML, redirect_to_not_found
 from app.schemas import (
     AdminIn,
@@ -52,6 +52,8 @@ app.add_middleware(
         "https://admin.url.taipei",
         "https://url-taipei.web.app",
         "https://url-taipei.firebaseapp.com",
+        # The QR studio is proxied on the public domain and calls /api/qr-status.
+        "https://url.taipei",
         "http://localhost:5173",
     ],
     allow_credentials=False,
@@ -429,6 +431,38 @@ def get_qrcode(
         media_type="image/png",
         headers={"Content-Disposition": f'attachment; filename="qrcode_{code}.png"'},
     )
+
+
+@app.get("/api/qr-status/{target:path}")
+def qr_status(target: str, db: Session = Depends(get_db)) -> dict[str, str]:
+    """Minimal link-state lookup so the QR studio can warn about typos.
+
+    Deliberately unauthenticated: it reveals nothing beyond what visiting the
+    link already would (does it currently resolve). States: active, disabled,
+    expired, not_found.
+    """
+    if target.startswith("f/"):
+        share = db.execute(select(FileShare).where(FileShare.code == target[2:])).scalar_one_or_none()
+        if share is None or share.status == "deleted":
+            return {"state": "not_found"}
+        if share.status == "disabled":
+            return {"state": "disabled"}
+        share_expiry = as_utc(share.expires_at)
+        if share_expiry is not None and share_expiry <= now_utc():
+            return {"state": "expired"}
+        return {"state": "active"}
+
+    if is_reserved(target, db):
+        return {"state": "not_found"}
+    link = db.execute(select(ShortLink).where(ShortLink.code == target)).scalar_one_or_none()
+    if link is None:
+        return {"state": "not_found"}
+    if link.status == "disabled":
+        return {"state": "disabled"}
+    expires_at = as_utc(link.expires_at)
+    if expires_at is not None and expires_at <= now_utc():
+        return {"state": "expired"}
+    return {"state": "active"}
 
 
 @app.get("/api/blocked-words", response_model=list[str])
