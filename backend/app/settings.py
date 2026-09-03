@@ -57,10 +57,11 @@ class Settings(BaseSettings):
     def reserved_codes_set(self) -> set[str]:
         raw = (self.RESERVED_CODES or "").strip()
         codes = {c.strip() for c in raw.split(",") if c.strip()} if raw else set()
-        # /qr/* is claimed by the QR style studio route, so a short link named
-        # "qr" could never be reached. Case variants are technically reachable
-        # (routing is case-sensitive) but reserved anyway to avoid confusion.
-        codes |= {"qr", "QR", "Qr", "qR"}
+        # /qr/* and /assets/* are claimed by the QR style studio routes, so
+        # short links with these codes could never be reached. Case variants
+        # of "qr" are technically reachable (routing is case-sensitive) but
+        # reserved anyway to avoid confusion.
+        codes |= {"qr", "QR", "Qr", "qR", "assets"}
         return codes
 
 

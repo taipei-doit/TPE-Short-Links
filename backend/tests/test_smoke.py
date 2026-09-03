@@ -63,20 +63,42 @@ def test_404_page_served_directly_no_loop(client: TestClient):
     assert "找不到您要找的頁面" in res.text
 
 
-def test_qr_studio_redirects_to_frontend(client: TestClient):
-    res = client.get("/qr/X123", follow_redirects=False)
-    assert res.status_code == 302
-    assert res.headers["location"].endswith("/qr/X123")
+def test_qr_studio_proxies_frontend(client: TestClient, monkeypatch):
+    import app.main as main_module
 
-    res = client.get("/qr/f/AB12CD", follow_redirects=False)
-    assert res.status_code == 302
-    assert res.headers["location"].endswith("/qr/f/AB12CD")
+    fetched: list[str] = []
 
-    # Bare /qr and garbage targets both land on the studio's input page.
-    for path in ("/qr", "/qr/not%20a%20code!!"):
-        res = client.get(path, follow_redirects=False)
-        assert res.status_code == 302
-        assert res.headers["location"].endswith("/qr")
+    def fake_fetch(path: str) -> tuple[int, bytes, str]:
+        fetched.append(path)
+        if path == "/qr":
+            return 200, b"<html>studio</html>", "text/html; charset=utf-8"
+        if path == "/assets/ok.js":
+            return 200, b"console.log(1)", "text/javascript"
+        return 404, b"", "text/plain"
+
+    monkeypatch.setattr(main_module, "_fetch_frontend", fake_fetch)
+    main_module._studio_index_cache.clear()
+    main_module._frontend_asset_cache.clear()
+
+    # Every /qr/* path serves the same SPA index, address bar stays on us.
+    for path in ("/qr", "/qr/X123", "/qr/f/AB12CD"):
+        res = client.get(path)
+        assert res.status_code == 200
+        assert "studio" in res.text
+
+    # The index is cached, so three page views cost one upstream fetch.
+    assert fetched.count("/qr") == 1
+
+    res = client.get("/assets/ok.js")
+    assert res.status_code == 200
+    assert res.headers["cache-control"].startswith("public")
+    client.get("/assets/ok.js")
+    assert fetched.count("/assets/ok.js") == 1
+
+    assert client.get("/assets/missing.js").status_code == 404
+
+    main_module._studio_index_cache.clear()
+    main_module._frontend_asset_cache.clear()
 
 
 def test_qr_code_is_reserved(client: TestClient):

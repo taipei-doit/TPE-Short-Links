@@ -6,6 +6,9 @@ import io
 import logging
 import re
 import secrets
+import time
+
+import requests
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
@@ -732,27 +735,68 @@ def not_found_page() -> HTMLResponse:
 
 
 # The QR style studio is a public, unauthenticated page in the static frontend.
-# These routes only exist so agencies can hand out url.taipei/qr/{code} — the
-# actual page (and all QR generation) runs client-side on Firebase Hosting.
-# Declared before /{code}; the code "qr" is reserved (see Settings).
-_QR_TARGET_RE = re.compile(r"^(f/)?[A-Za-z0-9_-]{1,32}$")
+# It is proxied rather than redirected so the address bar stays on url.taipei;
+# the hashed /assets bundles the page references are proxied (and cached) too.
+# All QR generation still happens client-side. Declared before /{code}; the
+# codes "qr" and "assets" are reserved (see Settings).
+_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_STUDIO_INDEX_TTL_SECONDS = 60.0
+_studio_index_cache: dict[str, tuple[float, bytes]] = {}
+_frontend_asset_cache: dict[str, tuple[bytes, str]] = {}
+
+
+def _fetch_frontend(path: str) -> tuple[int, bytes, str]:
+    """GET a path from the static frontend hosting. Split out so tests can stub it."""
+    settings = get_settings()
+    resp = requests.get(f"{settings.FRONTEND_BASE_URL.rstrip('/')}{path}", timeout=10)
+    return resp.status_code, resp.content, resp.headers.get("content-type", "application/octet-stream")
 
 
 @app.get("/qr")
-def qr_studio_home() -> RedirectResponse:
-    settings = get_settings()
-    return RedirectResponse(url=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/qr", status_code=302)
-
-
 @app.get("/qr/{target:path}")
-def qr_studio(target: str) -> RedirectResponse:
-    settings = get_settings()
-    base = settings.FRONTEND_BASE_URL.rstrip("/")
-    # Anything that isn't a plausible short-link or file-share code just lands
-    # on the studio's own input page — no error surface needed here.
-    if not _QR_TARGET_RE.match(target):
-        return RedirectResponse(url=f"{base}/qr", status_code=302)
-    return RedirectResponse(url=f"{base}/qr/{target}", status_code=302)
+def qr_studio(target: str = "") -> HTMLResponse:
+    # The SPA handles every /qr/* path itself (including invalid codes), so the
+    # backend always serves the same index page.
+    now = time.monotonic()
+    cached = _studio_index_cache.get("index")
+    if cached is not None and now - cached[0] < _STUDIO_INDEX_TTL_SECONDS:
+        return HTMLResponse(content=cached[1], headers={"Cache-Control": "no-cache"})
+    try:
+        status, body, _ = _fetch_frontend("/qr")
+    except requests.RequestException:
+        status, body = 0, b""
+    if status == 200 and body:
+        _studio_index_cache["index"] = (now, body)
+    elif cached is not None:
+        body = cached[1]  # stale beats broken while hosting hiccups
+    else:
+        raise HTTPException(status_code=503, detail="QR studio temporarily unavailable")
+    return HTMLResponse(content=body, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/assets/{filename}")
+def frontend_asset(filename: str = Path(..., min_length=1, max_length=128)) -> Response:
+    if not _ASSET_NAME_RE.match(filename):
+        raise HTTPException(status_code=404, detail="Not found")
+    hit = _frontend_asset_cache.get(filename)
+    if hit is None:
+        try:
+            status, body, ctype = _fetch_frontend(f"/assets/{filename}")
+        except requests.RequestException:
+            raise HTTPException(status_code=502, detail="Upstream fetch failed")
+        if status != 200:
+            raise HTTPException(status_code=404, detail="Not found")
+        # Filenames are content-hashed and immutable; cache them so a page view
+        # costs one upstream fetch at most. Reset wholesale if it ever grows.
+        if len(_frontend_asset_cache) > 64:
+            _frontend_asset_cache.clear()
+        _frontend_asset_cache[filename] = (body, ctype)
+        hit = _frontend_asset_cache[filename]
+    return Response(
+        content=hit[0],
+        media_type=hit[1],
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @app.get("/{code}")
