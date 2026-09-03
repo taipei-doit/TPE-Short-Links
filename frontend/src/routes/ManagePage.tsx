@@ -595,6 +595,7 @@ export function ManagePage() {
         onClose={() => setQrLink(null)}
         code={qrLink?.code ?? ''}
         shortUrl={qrLink?.short_url ?? ''}
+        qrPin={qrLink?.qr_pin}
       />
     </Stack>
   );

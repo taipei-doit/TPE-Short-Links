@@ -6,9 +6,14 @@
  */
 
 import { encode, type Ecl } from './encoder';
-import { TAIPEI_MARK } from './taipeiMark';
 
 export type { Ecl } from './encoder';
+
+/** 市徽向量。刻意不打包進前端，由後端在 PIN 驗證後提供。 */
+export interface LogoMark {
+  viewBox: string;
+  body: string;
+}
 
 export type ModuleShape = 'square' | 'rounded' | 'dot' | 'diamond' | 'liquid';
 export type EyeFrame = 'square' | 'rounded' | 'circle' | 'leaf';
@@ -42,8 +47,10 @@ export interface RenderOptions {
   topText?: string;
   /** 下方文字，空字串代表不畫下方色帶 */
   bottomText?: string;
-  /** 中央是否放市徽 */
+  /** 中央是否放市徽；需同時提供 logoMark 才會繪製 */
   showLogo?: boolean;
+  /** 市徽向量（由後端取得） */
+  logoMark?: LogoMark;
   /** 自訂中央圖示（data URI）。提供時取代市徽，同樣強制容錯 H 並挖空底下模組。 */
   logoImage?: string;
   /** 容錯等級，預設 H；showLogo 為 true 時強制 H */
@@ -193,7 +200,7 @@ export function renderQrSvg(o: RenderOptions): RenderResult {
   const style = o.style;
   const topText = (o.topText ?? '').trim();
   const bottomText = (o.bottomText ?? '').trim();
-  const showLogo = !!o.showLogo || !!o.logoImage;
+  const showLogo = (!!o.showLogo && !!o.logoMark) || !!o.logoImage;
   const ecl: Ecl = showLogo ? 'H' : (o.ecl ?? 'H');
   const margin = o.margin ?? 4;
 
@@ -275,10 +282,10 @@ export function renderQrSvg(o: RenderOptions): RenderResult {
       logoSvg +=
         `<image x="${lo0 + margin}" y="${lo0 + margin}" width="${logoModules}" height="${logoModules}" ` +
         `href="${esc(o.logoImage)}" preserveAspectRatio="xMidYMid meet"/>`;
-    } else {
+    } else if (o.logoMark) {
       logoSvg +=
         `<svg x="${lo0 + margin}" y="${lo0 + margin}" width="${logoModules}" height="${logoModules}" ` +
-        `viewBox="${TAIPEI_MARK.viewBox}" preserveAspectRatio="xMidYMid meet">${TAIPEI_MARK.body}</svg>`;
+        `viewBox="${o.logoMark.viewBox}" preserveAspectRatio="xMidYMid meet">${o.logoMark.body}</svg>`;
     }
   }
 

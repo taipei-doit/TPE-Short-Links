@@ -13,6 +13,15 @@ import 'dayjs/locale/zh-tw';
 import { AuthProvider } from './auth/AuthContext';
 import { App } from './routes/App';
 
+// 裸的 Hosting 網域不對外使用：一律轉到正式的管理網域（同路徑）。
+// 這只是引導，真正的門是登入與 QR PIN。
+const rawHosts = ['url-taipei.web.app', 'url-taipei.firebaseapp.com'];
+if (rawHosts.includes(window.location.hostname)) {
+  window.location.replace(
+    `https://admin.url.taipei${window.location.pathname}${window.location.search}${window.location.hash}`,
+  );
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <MantineProvider

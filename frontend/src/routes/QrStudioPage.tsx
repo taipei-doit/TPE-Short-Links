@@ -13,14 +13,15 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconAlertTriangle, IconDownload, IconInfoCircle, IconQrcode } from '@tabler/icons-react';
+import { IconAlertTriangle, IconDownload, IconInfoCircle, IconLock } from '@tabler/icons-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import { DEFAULT_PRESET_ID, QR_PRESETS, getPreset } from '../qr/presets';
-import { renderQrSvg, svgToPngBlob, type Ecl, type QrStyle } from '../qr/render';
+import { renderQrSvg, svgToPngBlob, type Ecl, type LogoMark, type QrStyle } from '../qr/render';
 
 /** 只服務自家網域的連結，這個頁面刻意不能為任意網址產 QR。 */
 const PUBLIC_BASE = 'https://url.taipei';
@@ -70,20 +71,6 @@ function triggerDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** 把使用者貼進來的東西（代碼或完整網址）整理成合法的目標路徑。 */
-function normalizeTarget(input: string): string | null {
-  let s = input.trim();
-  if (/^https?:\/\//i.test(s)) {
-    try {
-      s = new URL(s).pathname;
-    } catch {
-      return null;
-    }
-  }
-  s = s.replace(/^\/+/, '').replace(/^qr\//i, '');
-  return TARGET_RE.test(s) ? s : null;
-}
-
 const cardStyle = {
   boxShadow: '0 2px 12px rgba(0, 0, 0, 0.1)',
   background: 'white',
@@ -94,63 +81,105 @@ export function QrStudioPage() {
   const params = useParams();
   const target = params['*'] ?? '';
   if (!TARGET_RE.test(target)) {
-    return <StudioLanding hadInvalidTarget={target !== ''} />;
+    return <StudioNotFound />;
   }
-  return <StudioEditor target={target} />;
+  return <StudioGate target={target} />;
 }
 
-function StudioLanding({ hadInvalidTarget }: { hadInvalidTarget: boolean }) {
-  const navigate = useNavigate();
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | null>(
-    hadInvalidTarget ? '網址中的代碼格式不正確，請重新輸入' : null,
+/** 產生器不開放憑空使用：沒有帶有效代碼就是 404。 */
+function StudioNotFound() {
+  return (
+    <Card withBorder padding="xl" radius="md" style={{ ...cardStyle, maxWidth: 480, margin: '4rem auto' }}>
+      <Stack gap="sm" align="center">
+        <Title order={3}>找不到這個頁面</Title>
+        <Text size="sm" c="dimmed" ta="center">
+          QR Code 產生器需要透過有效的短網址開啟（例如 url.taipei/qr/代碼），請確認承辦提供的網址是否完整。
+        </Text>
+      </Stack>
+    </Card>
   );
+}
 
-  const go = () => {
-    const t = normalizeTarget(value);
-    if (!t) {
-      setError('請輸入短網址代碼，或貼上完整的 url.taipei 短網址');
-      return;
+/** PIN 閘門：驗證通過（或已登入管理員）才進編輯器，市徽也在此時才由後端取得。 */
+function StudioGate({ target }: { target: string }) {
+  const { user, loading: authLoading } = useAuth();
+  const isFileShare = target.startsWith('f/');
+
+  const [mark, setMark] = useState<LogoMark | null>(null);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
+
+  // 已登入的管理員免輸 PIN
+  useEffect(() => {
+    if (authLoading || !user || mark) return;
+    let alive = true;
+    api
+      .getQrMark()
+      .then((r) => {
+        if (alive) setMark(r.mark);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [authLoading, user, mark]);
+
+  const submit = async () => {
+    if (!pin.trim()) return;
+    setUnlocking(true);
+    setPinError(null);
+    try {
+      const r = await api.qrUnlock(target, pin.trim());
+      setMark(r.mark);
+    } catch (e) {
+      setPinError(e instanceof Error ? e.message : 'PIN 碼驗證失敗');
+    } finally {
+      setUnlocking(false);
     }
-    navigate(`/qr/${t}`);
   };
 
+  if (mark) {
+    return <StudioEditor target={target} mark={mark} />;
+  }
+
   return (
-    <Stack gap="xl">
-      <div>
-        <Title order={1} style={{ marginBottom: '8px', fontWeight: 700 }}>
-          QR Code 產生器
-        </Title>
-        <Text c="dimmed" size="sm">
-          為 url.taipei 短網址產生樣式化的 QR Code。圖檔完全在您的瀏覽器產生，不會上傳任何資料。
+    <Card withBorder padding="xl" radius="md" style={{ ...cardStyle, maxWidth: 480, margin: '4rem auto' }}>
+      <Stack gap="md">
+        <Group gap="xs">
+          <IconLock size={22} />
+          <Title order={3}>QR Code 產生器</Title>
+        </Group>
+        <Text size="sm" c="dimmed">
+          此產生器供臺北市政府各機關使用。請輸入承辦提供的
+          {isFileShare ? '下載 PIN 碼' : ' 4 碼 PIN'}，即可為{' '}
+          <Text span fw={600}>
+            {PUBLIC_BASE}/{target}
+          </Text>{' '}
+          產製 QR Code。
         </Text>
-      </div>
-      <Card withBorder padding="xl" radius="md" style={cardStyle}>
-        <Stack gap="md">
-          <TextInput
-            label="短網址代碼"
-            description="輸入代碼（例如 AAAA），或直接貼上完整短網址（例如 https://url.taipei/AAAA）"
-            placeholder="AAAA"
-            value={value}
-            error={error}
-            size="md"
-            radius="md"
-            onChange={(e) => {
-              setValue(e.currentTarget.value);
-              setError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') go();
-            }}
-          />
-          <Group justify="flex-end">
-            <Button leftSection={<IconQrcode size={18} />} onClick={go} size="md" radius="md">
-              產生 QR Code
-            </Button>
-          </Group>
-        </Stack>
-      </Card>
-    </Stack>
+        <TextInput
+          label="PIN 碼"
+          placeholder={isFileShare ? '8 碼英數字' : '4 碼數字'}
+          value={pin}
+          error={pinError}
+          maxLength={isFileShare ? 8 : 4}
+          autoFocus
+          styles={{ input: { fontFamily: 'monospace', letterSpacing: '4px', fontSize: 20 } }}
+          onChange={(e) => {
+            const raw = e.currentTarget.value;
+            setPin(isFileShare ? raw.toUpperCase().replace(/[^A-Z0-9]/g, '') : raw.replace(/\D/g, ''));
+            setPinError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+        />
+        <Button loading={unlocking} disabled={!pin.trim()} onClick={submit} fullWidth size="md" radius="md">
+          解鎖
+        </Button>
+      </Stack>
+    </Card>
   );
 }
 
@@ -164,7 +193,7 @@ const LINK_STATE_WARNINGS: Partial<Record<LinkState, string>> = {
   disabled: '這個短網址目前是停用狀態，掃描會導向 404 頁。QR 圖不會變，重新啟用後即可繼續使用。',
 };
 
-function StudioEditor({ target }: { target: string }) {
+function StudioEditor({ target, mark }: { target: string; mark: LogoMark }) {
   const targetUrl = `${PUBLIC_BASE}/${target}`;
   const isFileShare = target.startsWith('f/');
 
@@ -241,13 +270,14 @@ function StudioEditor({ target }: { target: string }) {
         topText,
         bottomText,
         showLogo: logoMode === 'taipei',
+        logoMark: mark,
         logoImage: logoMode === 'custom' && logoImage ? logoImage : undefined,
         ecl,
       });
     } catch {
       return null;
     }
-  }, [targetUrl, effStyle, topText, bottomText, logoMode, logoImage, ecl]);
+  }, [targetUrl, effStyle, topText, bottomText, logoMode, logoImage, ecl, mark]);
 
   // 只給最外層 svg 加行內樣式；市徽是巢狀 <svg>，用後代選擇器會把它撐爆。
   const previewHtml = useMemo(

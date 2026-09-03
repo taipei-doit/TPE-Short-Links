@@ -33,6 +33,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const data = (await res.json()) as { detail?: unknown };
       if (typeof data.detail === 'string') detail = data.detail;
+      else if (
+        data.detail &&
+        typeof data.detail === 'object' &&
+        typeof (data.detail as { message?: unknown }).message === 'string'
+      ) {
+        detail = (data.detail as { message: string }).message;
+      }
     } catch {
       // ignore
     }
@@ -62,6 +69,13 @@ async function downloadFile(path: string, filename: string): Promise<void> {
     try {
       const data = (await res.json()) as { detail?: unknown };
       if (typeof data.detail === 'string') detail = data.detail;
+      else if (
+        data.detail &&
+        typeof data.detail === 'object' &&
+        typeof (data.detail as { message?: unknown }).message === 'string'
+      ) {
+        detail = (data.detail as { message: string }).message;
+      }
     } catch {
       // ignore
     }
@@ -217,6 +231,14 @@ export const api = {
     downloadFile(`/api/links/${encodeURIComponent(code)}/qrcode`, `qrcode_${code}.png`),
   /** 公開端點，QR 產生器用來提醒代碼打錯或已失效；target 可為 "CODE" 或 "f/CODE"。 */
   getQrStatus: (target: string) => apiFetch<{ state: string }>(`/api/qr-status/${target}`),
+  /** 公開端點：以 PIN 解鎖 QR 產生器，成功時取得市徽向量。 */
+  qrUnlock: (target: string, pin: string) =>
+    apiFetch<{ mark: { viewBox: string; body: string } }>(`/api/qr-unlock/${target}`, {
+      method: 'POST',
+      body: JSON.stringify({ pin }),
+    }),
+  /** 已登入管理員免 PIN 直接取得市徽。 */
+  getQrMark: () => apiFetch<{ mark: { viewBox: string; body: string } }>('/api/qr-mark'),
   listBlockedWords: () => apiFetch<string[]>('/api/blocked-words'),
   addBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words?word=${encodeURIComponent(word)}`, { method: 'POST' }),
   deleteBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),

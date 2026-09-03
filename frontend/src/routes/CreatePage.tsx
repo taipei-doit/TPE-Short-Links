@@ -321,6 +321,7 @@ export function CreatePage() {
             onClose={() => setQrOpen(false)}
             code={result.code}
             shortUrl={result.short_url}
+            qrPin={result.qr_pin}
           />
         </Card>
       ) : null}

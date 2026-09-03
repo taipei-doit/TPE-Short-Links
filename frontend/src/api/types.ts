@@ -23,6 +23,8 @@ export type Link = {
   is_expired: boolean;
   short_url: string;
   click_count: number;
+  /** QR 產生器的 4 碼解鎖 PIN，管理員轉知局處用 */
+  qr_pin: string;
 };
 
 export type LinkList = {
