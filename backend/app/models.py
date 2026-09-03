@@ -28,6 +28,12 @@ class ReservedCode(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+def generate_qr_pin() -> str:
+    import secrets
+
+    return f"{secrets.randbelow(10000):04d}"
+
+
 class ShortLink(Base):
     __tablename__ = "short_links"
 
@@ -41,6 +47,12 @@ class ShortLink(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     click_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Gate for the public QR studio. Plaintext on purpose: admins must be able
+    # to read it back to relay it to agencies; it guards use of the official QR
+    # styling tool (city emblem included), not any data.
+    qr_pin: Mapped[str] = mapped_column(String(4), nullable=False, default=generate_qr_pin, server_default="0000")
+    qr_pin_failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    qr_pin_locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     tag: Mapped[Tag] = relationship(back_populates="links")
 

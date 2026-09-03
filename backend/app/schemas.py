@@ -48,6 +48,15 @@ class LinkOut(BaseModel):
     is_expired: bool
     short_url: str
     click_count: int
+    # Shown to admins so they can relay it to the owning agency; the public
+    # QR studio requires it before unlocking.
+    qr_pin: str
+
+
+class QrUnlockIn(BaseModel):
+    """PIN presented to unlock the public QR studio for one link."""
+
+    pin: str = Field(..., min_length=1, max_length=16)
 
 
 class LinkListOut(BaseModel):

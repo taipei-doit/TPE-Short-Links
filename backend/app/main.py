@@ -3,7 +3,9 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import json
 import logging
+import pathlib
 import re
 import secrets
 import time
@@ -23,6 +25,7 @@ from app.db.session import get_db
 from app.files import router as files_router
 from app.models import AdminUser, BlockedWord, FileShare, ReservedCode, ShortLink, Tag
 from app.pages import NOT_FOUND_HTML, redirect_to_not_found
+from app.pins import verify_pin
 from app.schemas import (
     AdminIn,
     AdminOut,
@@ -32,6 +35,7 @@ from app.schemas import (
     LinkListOut,
     LinkOut,
     LinkUpdateIn,
+    QrUnlockIn,
     TagOut,
     WhitelistCheckIn,
 )
@@ -141,6 +145,7 @@ def link_to_out(link: ShortLink, tag_name: str) -> LinkOut:
         is_expired=is_expired,
         short_url=f"{settings.PUBLIC_BASE_URL.rstrip('/')}/{link.code}",
         click_count=link.click_count,
+        qr_pin=link.qr_pin,
     )
 
 
@@ -431,6 +436,102 @@ def get_qrcode(
         media_type="image/png",
         headers={"Content-Disposition": f'attachment; filename="qrcode_{code}.png"'},
     )
+
+
+_qr_mark_cache: dict[str, str] | None = None
+
+
+def _qr_mark() -> dict[str, str]:
+    """The official city emblem vector, served only after a PIN unlock (or to a
+    signed-in admin). Kept out of the frontend bundle on purpose — that is the
+    one gate devtools cannot route around."""
+    global _qr_mark_cache
+    if _qr_mark_cache is None:
+        path = pathlib.Path(__file__).parent / "qr_mark.json"
+        _qr_mark_cache = json.loads(path.read_text(encoding="utf-8"))
+    return _qr_mark_cache
+
+
+def _qr_pin_locked_message(locked_until: dt.datetime, now: dt.datetime) -> HTTPException:
+    minutes = max(1, int((locked_until - now).total_seconds() // 60) + 1)
+    return HTTPException(
+        status_code=429,
+        detail={"error": "locked", "minutes": minutes, "message": f"嘗試次數過多，請於 {minutes} 分鐘後再試"},
+    )
+
+
+@app.post("/api/qr-unlock/{target:path}")
+def qr_unlock(
+    payload: QrUnlockIn,
+    target: str = Path(..., min_length=1, max_length=64),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Public PIN check that unlocks the QR studio for one link.
+
+    Short links use their plaintext 4-digit qr_pin; f/ file shares reuse their
+    own hashed download PIN. Both mirror the file-share lockout so a 4-digit
+    space cannot be brute-forced.
+    """
+    settings = get_settings()
+    now = now_utc()
+    max_attempts = settings.FILE_PIN_MAX_ATTEMPTS
+    lockout_minutes = settings.FILE_PIN_LOCKOUT_MINUTES
+
+    if target.startswith("f/"):
+        row = db.execute(select(FileShare).where(FileShare.code == target[2:])).scalar_one_or_none()
+        if row is None or row.status == "deleted":
+            raise HTTPException(status_code=404, detail={"error": "not_found", "message": "連結不存在"})
+        pin_ok = lambda: verify_pin(payload.pin, row.pin_hash)  # noqa: E731
+    else:
+        if is_reserved(target, db):
+            raise HTTPException(status_code=404, detail={"error": "not_found", "message": "連結不存在"})
+        row = db.execute(select(ShortLink).where(ShortLink.code == target)).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"error": "not_found", "message": "連結不存在"})
+        pin_ok = lambda: secrets.compare_digest(payload.pin.strip(), row.qr_pin)  # noqa: E731
+
+    attempts_field = "failed_attempts" if target.startswith("f/") else "qr_pin_failed_attempts"
+    locked_field = "locked_until" if target.startswith("f/") else "qr_pin_locked_until"
+
+    locked_until = as_utc(getattr(row, locked_field))
+    if locked_until is not None and locked_until > now:
+        raise _qr_pin_locked_message(locked_until, now)
+
+    if not pin_ok():
+        attempts = getattr(row, attempts_field) + 1
+        if attempts >= max_attempts:
+            setattr(row, locked_field, now + dt.timedelta(minutes=lockout_minutes))
+            setattr(row, attempts_field, 0)
+            db.add(row)
+            db.commit()
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "locked",
+                    "minutes": lockout_minutes,
+                    "message": f"嘗試次數過多，請於 {lockout_minutes} 分鐘後再試",
+                },
+            )
+        setattr(row, attempts_field, attempts)
+        db.add(row)
+        db.commit()
+        remaining = max_attempts - attempts
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "wrong_pin", "remaining": remaining, "message": f"PIN 碼錯誤，尚可嘗試 {remaining} 次"},
+        )
+
+    setattr(row, attempts_field, 0)
+    setattr(row, locked_field, None)
+    db.add(row)
+    db.commit()
+    return {"mark": _qr_mark()}
+
+
+@app.get("/api/qr-mark")
+def qr_mark_for_admins(_auth: dict = Depends(get_firebase_user)) -> dict:
+    """Signed-in admins get the emblem without a PIN (used by the admin dialog)."""
+    return {"mark": _qr_mark()}
 
 
 @app.get("/api/qr-status/{target:path}")
@@ -794,11 +895,36 @@ def _fetch_frontend(path: str) -> tuple[int, bytes, str]:
     return resp.status_code, resp.content, resp.headers.get("content-type", "application/octet-stream")
 
 
+_QR_TARGET_RE = re.compile(r"^(f/)?[A-Za-z0-9_-]{1,32}$")
+
+
+def _qr_target_exists(target: str, db: Session) -> bool:
+    """Does this studio target name a real link? Deleted shares and reserved
+    codes don't count; disabled/expired ones do (their print material may need
+    reprinting, and reactivation revives the same QR)."""
+    if not _QR_TARGET_RE.match(target):
+        return False
+    if target.startswith("f/"):
+        share = db.execute(select(FileShare).where(FileShare.code == target[2:])).scalar_one_or_none()
+        return share is not None and share.status != "deleted"
+    if is_reserved(target, db):
+        return False
+    link = db.execute(select(ShortLink).where(ShortLink.code == target)).scalar_one_or_none()
+    return link is not None
+
+
 @app.get("/qr")
+def qr_studio_root() -> Response:
+    # Deliberately closed: the studio only opens for a specific existing link,
+    # never as a free-standing generator.
+    return redirect_to_not_found()
+
+
 @app.get("/qr/{target:path}")
-def qr_studio(target: str = "") -> HTMLResponse:
-    # The SPA handles every /qr/* path itself (including invalid codes), so the
-    # backend always serves the same index page.
+def qr_studio(target: str, db: Session = Depends(get_db)) -> Response:
+    # Server-side existence check — devtools can't talk a 404 into a page.
+    if not _qr_target_exists(target, db):
+        return redirect_to_not_found()
     now = time.monotonic()
     cached = _studio_index_cache.get("index")
     if cached is not None and now - cached[0] < _STUDIO_INDEX_TTL_SECONDS:

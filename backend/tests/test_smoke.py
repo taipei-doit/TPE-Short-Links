@@ -86,14 +86,21 @@ def test_qr_studio_proxies_frontend(client: TestClient, monkeypatch):
     main_module._studio_index_cache.clear()
     main_module._frontend_asset_cache.clear()
 
-    # Every /qr/* path serves the same SPA index, address bar stays on us.
-    for path in ("/qr", "/qr/X123", "/qr/f/AB12CD"):
+    # Only existing links get the studio page; the address bar stays on us.
+    create_link(client, "https://example.com/qr-proxy", code="QP123")
+    for path in ("/qr/QP123", "/qr/QP123"):
         res = client.get(path)
         assert res.status_code == 200
         assert "studio" in res.text
 
-    # The index is cached, so three page views cost one upstream fetch.
+    # The index is cached, so repeat views cost one upstream fetch.
     assert fetched.count("/qr") == 1
+
+    # Bare /qr, unknown codes and reserved codes are dead ends by design.
+    for path in ("/qr", "/qr/NOPE99", "/qr/qr", "/qr/f/NOSHARE"):
+        res = client.get(path, follow_redirects=False)
+        assert res.status_code == 302, path
+        assert res.headers["location"].endswith("/404.html"), path
 
     res = client.get("/assets/ok.js")
     assert res.status_code == 200
@@ -105,6 +112,37 @@ def test_qr_studio_proxies_frontend(client: TestClient, monkeypatch):
 
     main_module._studio_index_cache.clear()
     main_module._frontend_asset_cache.clear()
+
+
+def test_qr_unlock_pin_flow(client: TestClient):
+    link = create_link(client, "https://example.com/qr-pin", code="QPIN1")
+    pin = link["qr_pin"]
+    assert len(pin) == 4 and pin.isdigit()
+
+    # Wrong PIN counts down, right PIN hands over the emblem.
+    res = client.post("/api/qr-unlock/QPIN1", json={"pin": "no"})
+    assert res.status_code == 401
+    assert res.json()["detail"]["remaining"] == 4
+
+    res = client.post("/api/qr-unlock/QPIN1", json={"pin": pin})
+    assert res.status_code == 200
+    assert res.json()["mark"]["viewBox"]
+
+    # A successful unlock resets the counter; five straight misses lock it.
+    for _ in range(4):
+        assert client.post("/api/qr-unlock/QPIN1", json={"pin": "no"}).status_code == 401
+    res = client.post("/api/qr-unlock/QPIN1", json={"pin": "no"})
+    assert res.status_code == 429
+    # Locked means locked, even with the right PIN.
+    assert client.post("/api/qr-unlock/QPIN1", json={"pin": pin}).status_code == 429
+
+    assert client.post("/api/qr-unlock/NOPE99", json={"pin": "0000"}).status_code == 404
+
+
+def test_qr_mark_requires_admin_or_unlock(client: TestClient):
+    res = client.get("/api/qr-mark")
+    assert res.status_code == 200
+    assert res.json()["mark"]["viewBox"]
 
 
 def test_qr_status_public_lookup(client: TestClient):
