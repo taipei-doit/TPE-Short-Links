@@ -67,6 +67,22 @@ export const QR_PRESETS: QrPreset[] = [
       frameFg: '#FFFFFF',
     },
   },
+  {
+    id: 'classic',
+    label: '方正經典',
+    hint: '單色方形定位點，相容性最高；票證、門禁等機器讀取用途請選這組',
+    style: {
+      moduleShape: 'square',
+      eyeFrame: 'square',
+      eyeBall: 'square',
+      colorMode: 'solid',
+      fg1: '#0B2130',
+      fg2: '#0B2130',
+      bg: '#FFFFFF',
+      frameBg: '#0B2130',
+      frameFg: '#FFFFFF',
+    },
+  },
 ];
 
 export const DEFAULT_PRESET_ID = 'campaign';

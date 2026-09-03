@@ -1,6 +1,7 @@
-import { Button, Group, Modal, SegmentedControl, Stack, Switch, Text, TextInput } from '@mantine/core';
+import { Anchor, Button, Group, Modal, SegmentedControl, Stack, Switch, Text, TextInput } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { DEFAULT_PRESET_ID, QR_PRESETS, getPreset } from '../qr/presets';
 import { renderQrSvg, svgToPngBlob } from '../qr/render';
@@ -118,6 +119,16 @@ export function QrCodeDialog({ opened, onClose, code, shortUrl }: QrCodeDialogPr
 
   const preset = getPreset(prefs.presetId);
 
+  // 進階自訂頁（公開的 /qr/*）只吃自家網域的路徑，短網址與檔案分享都通。
+  const studioPath = useMemo(() => {
+    try {
+      const p = new URL(shortUrl).pathname.replace(/^\/+/, '');
+      return /^(f\/)?[A-Za-z0-9_-]{1,32}$/.test(p) ? `/qr/${p}` : null;
+    } catch {
+      return null;
+    }
+  }, [shortUrl]);
+
   return (
     <Modal opened={opened} onClose={onClose} title="下載 QR Code" size="lg" radius="md" centered>
       <Stack gap="md">
@@ -173,7 +184,15 @@ export function QrCodeDialog({ opened, onClose, code, shortUrl }: QrCodeDialogPr
           </Stack>
         </Group>
 
-        <Group justify="flex-end" gap="sm">
+        <Group justify="space-between" gap="sm">
+          {studioPath ? (
+            <Anchor component={Link} to={studioPath} size="sm" onClick={onClose}>
+              更多顏色與形狀（進階自訂）
+            </Anchor>
+          ) : (
+            <span />
+          )}
+          <Group gap="sm">
           <Button variant="default" onClick={onClose}>
             關閉
           </Button>
@@ -183,6 +202,7 @@ export function QrCodeDialog({ opened, onClose, code, shortUrl }: QrCodeDialogPr
           <Button loading={downloading} onClick={() => download('png')}>
             下載 PNG
           </Button>
+          </Group>
         </Group>
       </Stack>
     </Modal>

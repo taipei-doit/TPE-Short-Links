@@ -8,6 +8,8 @@
 import { encode, type Ecl } from './encoder';
 import { TAIPEI_MARK } from './taipeiMark';
 
+export type { Ecl } from './encoder';
+
 export type ModuleShape = 'square' | 'rounded' | 'dot' | 'diamond' | 'liquid';
 export type EyeFrame = 'square' | 'rounded' | 'circle' | 'leaf';
 export type EyeBall = 'square' | 'rounded' | 'circle' | 'leaf' | 'azalea';
@@ -42,6 +44,8 @@ export interface RenderOptions {
   bottomText?: string;
   /** 中央是否放市徽 */
   showLogo?: boolean;
+  /** 自訂中央圖示（data URI）。提供時取代市徽，同樣強制容錯 H 並挖空底下模組。 */
+  logoImage?: string;
   /** 容錯等級，預設 H；showLogo 為 true 時強制 H */
   ecl?: Ecl;
   /** 靜區留白（模組數），規範要求至少 4 */
@@ -189,7 +193,7 @@ export function renderQrSvg(o: RenderOptions): RenderResult {
   const style = o.style;
   const topText = (o.topText ?? '').trim();
   const bottomText = (o.bottomText ?? '').trim();
-  const showLogo = !!o.showLogo;
+  const showLogo = !!o.showLogo || !!o.logoImage;
   const ecl: Ecl = showLogo ? 'H' : (o.ecl ?? 'H');
   const margin = o.margin ?? 4;
 
@@ -266,10 +270,16 @@ export function renderQrSvg(o: RenderOptions): RenderResult {
     const pad = 0.6;
     const bx = lo0 + margin - pad;
     const bs = logoModules + pad * 2;
-    logoSvg =
-      `<rect x="${bx}" y="${bx}" width="${bs}" height="${bs}" rx="${bs * 0.18}" fill="${style.bg}"/>` +
-      `<svg x="${lo0 + margin}" y="${lo0 + margin}" width="${logoModules}" height="${logoModules}" ` +
-      `viewBox="${TAIPEI_MARK.viewBox}" preserveAspectRatio="xMidYMid meet">${TAIPEI_MARK.body}</svg>`;
+    logoSvg = `<rect x="${bx}" y="${bx}" width="${bs}" height="${bs}" rx="${bs * 0.18}" fill="${style.bg}"/>`;
+    if (o.logoImage) {
+      logoSvg +=
+        `<image x="${lo0 + margin}" y="${lo0 + margin}" width="${logoModules}" height="${logoModules}" ` +
+        `href="${esc(o.logoImage)}" preserveAspectRatio="xMidYMid meet"/>`;
+    } else {
+      logoSvg +=
+        `<svg x="${lo0 + margin}" y="${lo0 + margin}" width="${logoModules}" height="${logoModules}" ` +
+        `viewBox="${TAIPEI_MARK.viewBox}" preserveAspectRatio="xMidYMid meet">${TAIPEI_MARK.body}</svg>`;
+    }
   }
 
   const ox = framePad;

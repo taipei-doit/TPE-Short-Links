@@ -9,11 +9,15 @@ import { CreatePage } from './CreatePage';
 import { FilesPage } from './FilesPage';
 import { LoginPage } from './LoginPage';
 import { ManagePage } from './ManagePage';
+import { QrStudioPage } from './QrStudioPage';
 import { TagsPage } from './TagsPage';
 
 export function App() {
   const location = useLocation();
   const { user, loading, signOut } = useAuth();
+
+  // QR 產生器是公開頁面，不需要登入，也不等待登入狀態載入。
+  const isQrStudio = location.pathname === '/qr' || location.pathname.startsWith('/qr/');
 
   const navItems = [
     { path: '/create', label: '建立短網址', icon: IconLink },
@@ -111,7 +115,11 @@ export function App() {
       </AppShell.Header>
       <AppShell.Main>
         <Container size="lg" py="xl">
-          {loading ? (
+          {isQrStudio ? (
+            <Routes>
+              <Route path="/qr/*" element={<QrStudioPage />} />
+            </Routes>
+          ) : loading ? (
             <div style={{ padding: '2rem', textAlign: 'center' }}>載入中…</div>
           ) : !user ? (
             <Routes>
