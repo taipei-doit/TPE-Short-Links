@@ -52,3 +52,5 @@ backend/scripts/admins_export*.json
 
 # Cursor
 .cursor/
+# The city emblem vector is a required backend asset, not a local config
+!backend/app/qr_mark.json
