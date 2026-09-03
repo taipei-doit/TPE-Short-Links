@@ -31,6 +31,12 @@ def test_unknown_code_redirects_to_404_page(client: TestClient):
     assert res.headers["location"].endswith("/404.html")
 
 
+def test_bare_root_redirects_to_404_page(client: TestClient):
+    res = client.get("/", follow_redirects=False)
+    assert res.status_code == 302
+    assert res.headers["location"].endswith("/404.html")
+
+
 def test_disabled_code_redirects_to_404_page(client: TestClient):
     create_link(client, "https://example.com/b", code="B123")
     assert client.post("/api/links/B123/disable").status_code == 200

@@ -734,6 +734,14 @@ def not_found_page() -> HTMLResponse:
     return HTMLResponse(content=NOT_FOUND_HTML, status_code=200)
 
 
+# Bare url.taipei/ matches no route (the catch-all needs a non-empty code),
+# which used to leak FastAPI's raw JSON 404. Send people to the same page
+# every other dead end uses.
+@app.get("/")
+def root() -> Response:
+    return redirect_to_not_found()
+
+
 # The QR style studio is a public, unauthenticated page in the static frontend.
 # It is proxied rather than redirected so the address bar stays on url.taipei;
 # the hashed /assets bundles the page references are proxied (and cached) too.
