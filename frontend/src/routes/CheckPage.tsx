@@ -2,6 +2,7 @@ import { Alert, Button, Card, Group, Loader, Stack, Text, TextInput, Title } fro
 import {
   IconAlertTriangle,
   IconCircleCheck,
+  IconExternalLink,
   IconFileZip,
   IconInfoCircle,
   IconSearch,
@@ -234,7 +235,16 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
           {result.original_url}
         </Text>
         {preview && (
-          <Card withBorder radius="md" padding={0} style={{ overflow: 'hidden' }}>
+          <Card
+            component="a"
+            href={shortUrl}
+            target="_blank"
+            rel="noopener"
+            withBorder
+            radius="md"
+            padding={0}
+            style={{ overflow: 'hidden', cursor: 'pointer' }}
+          >
             {preview.image && (
               <img
                 src={preview.image}
@@ -267,6 +277,19 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
             </Stack>
           </Card>
         )}
+        <Group justify="flex-end">
+          <Button
+            component="a"
+            href={shortUrl}
+            target="_blank"
+            rel="noopener"
+            leftSection={<IconExternalLink size={18} />}
+            size="md"
+            radius="md"
+          >
+            確認無誤，前往目標網站
+          </Button>
+        </Group>
         <Text size="xs" c="dimmed">
           提醒：請確認上方目標網域是否為您預期的網站；本查詢頁僅適用於 url.taipei
           的短網址，無法查核其他服務產生的連結。
