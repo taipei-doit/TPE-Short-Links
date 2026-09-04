@@ -10,11 +10,13 @@ import pathlib
 import re
 import secrets
 import socket
+import ssl
 import time
 from html import unescape
 from urllib.parse import urljoin, urlparse
 
 import requests
+import requests.adapters
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
@@ -575,6 +577,26 @@ _PREVIEW_MAX_BYTES = 512 * 1024
 _preview_cache: dict[str, tuple[float, dict]] = {}
 
 
+class _PreviewAdapter(requests.adapters.HTTPAdapter):
+    """TLS verification without Python 3.13's VERIFY_X509_STRICT.
+
+    Strict mode rejects certificates missing a Subject Key Identifier, which
+    several government CA (GCA/GTLSCA) certs lack — the very sites we preview
+    most. Chain and hostname verification stay fully enabled; this is the same
+    level browsers and Python <=3.12 apply.
+    """
+
+    def init_poolmanager(self, *args, **kwargs):  # type: ignore[override]
+        ctx = ssl.create_default_context()
+        ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
+
+
+_preview_session = requests.Session()
+_preview_session.mount("https://", _PreviewAdapter())
+
+
 def _host_is_public(hostname: str) -> bool:
     """Refuse to preview anything that resolves to a private/internal address.
 
@@ -601,7 +623,7 @@ def _fetch_url_html(url: str) -> tuple[str, str]:
     if parsed.scheme not in ("http", "https") or not parsed.hostname or not _host_is_public(parsed.hostname):
         raise ValueError("not previewable")
     # 相容型 UA：部分機關網站的 WAF 會擋掉陌生的純 bot 字串。
-    r = requests.get(
+    r = _preview_session.get(
         url,
         timeout=(5, 8),
         stream=True,
