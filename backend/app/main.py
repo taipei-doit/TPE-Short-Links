@@ -644,7 +644,14 @@ def _fetch_url_html(url: str) -> tuple[str, str]:
         raw += chunk
         if len(raw) >= _PREVIEW_MAX_BYTES:
             break
-    enc = r.encoding if r.encoding and r.encoding.lower() != "iso-8859-1" else (r.apparent_encoding or "utf-8")
+    enc = r.encoding
+    if not enc or enc.lower() == "iso-8859-1":
+        # 沒宣告 charset 時對「已讀入的位元組」自行偵測 —— 不能用
+        # r.apparent_encoding，它會去讀已被串流消耗掉的 r.content。
+        from charset_normalizer import from_bytes
+
+        best = from_bytes(raw).best()
+        enc = best.encoding if best else "utf-8"
     try:
         return raw.decode(enc, errors="replace"), r.url
     except LookupError:
@@ -688,7 +695,7 @@ def check_preview(target: str, db: Session = Depends(get_db)) -> dict:
 
     try:
         html_text, final_url = _fetch_url_html(url)
-    except (requests.RequestException, ValueError) as exc:
+    except Exception as exc:  # a broken preview must degrade to "no card", never a 500
         logging.warning("link preview fetch failed for %s: %r", url, exc)
         raise HTTPException(status_code=404, detail="No preview")
 
