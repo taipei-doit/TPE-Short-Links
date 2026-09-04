@@ -600,12 +600,17 @@ def _fetch_url_html(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname or not _host_is_public(parsed.hostname):
         raise ValueError("not previewable")
+    # 相容型 UA：部分機關網站的 WAF 會擋掉陌生的純 bot 字串。
     r = requests.get(
         url,
-        timeout=(3, 5),
+        timeout=(5, 8),
         stream=True,
         allow_redirects=True,
-        headers={"User-Agent": "TPE-ShortLinks-LinkPreview/1.0 (+https://url.taipei/check)"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; TPE-ShortLinks-LinkPreview/1.0; +https://url.taipei/check)",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "zh-TW,zh;q=0.9",
+        },
     )
     final = urlparse(r.url)
     if final.scheme not in ("http", "https") or not final.hostname or not _host_is_public(final.hostname):
@@ -661,7 +666,8 @@ def check_preview(target: str, db: Session = Depends(get_db)) -> dict:
 
     try:
         html_text, final_url = _fetch_url_html(url)
-    except (requests.RequestException, ValueError):
+    except (requests.RequestException, ValueError) as exc:
+        logging.warning("link preview fetch failed for %s: %r", url, exc)
         raise HTTPException(status_code=404, detail="No preview")
 
     title_match = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
