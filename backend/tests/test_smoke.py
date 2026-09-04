@@ -176,6 +176,36 @@ def test_public_check_endpoint(client: TestClient):
     }
 
 
+def test_check_preview_card(client: TestClient, monkeypatch):
+    import app.main as main_module
+
+    html = (
+        "<html><head><title>備援標題</title>"
+        '<meta property="og:title" content="臺北市活動報名" />'
+        '<meta property="og:description" content="活動說明" />'
+        '<meta property="og:image" content="/banner.png" />'
+        "</head></html>"
+    )
+    monkeypatch.setattr(
+        main_module, "_fetch_url_html", lambda url: (html, "https://example.com/event/page")
+    )
+    main_module._preview_cache.clear()
+
+    create_link(client, "https://example.com/event", code="PRV01")
+    res = client.get("/api/check-preview/PRV01")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["title"] == "臺北市活動報名"
+    assert body["image"] == "https://example.com/banner.png"
+
+    # Disabled links stop previewing along with everything else.
+    assert client.post("/api/links/PRV01/disable").status_code == 200
+    main_module._preview_cache.clear()
+    assert client.get("/api/check-preview/PRV01").status_code == 404
+    assert client.get("/api/check-preview/NOPE99").status_code == 404
+    assert client.get("/api/check-preview/f/NOSHARE").status_code == 404
+
+
 def test_check_page_is_open(client: TestClient, monkeypatch):
     import app.main as main_module
 

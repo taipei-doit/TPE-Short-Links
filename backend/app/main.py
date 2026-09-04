@@ -3,12 +3,16 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import ipaddress
 import json
 import logging
 import pathlib
 import re
 import secrets
+import socket
 import time
+from html import unescape
+from urllib.parse import urljoin, urlparse
 
 import requests
 from typing import Literal
@@ -563,6 +567,118 @@ def check_target(target: str, db: Session = Depends(get_db)) -> dict:
     if expires_at is not None and expires_at <= now_utc():
         return {"kind": "link", "state": "expired", "original_url": None}
     return {"kind": "link", "state": "active", "original_url": link.original_url}
+
+
+# ---- 目標網站連結卡片（查核頁用） ----
+_PREVIEW_TTL_SECONDS = 24 * 3600
+_PREVIEW_MAX_BYTES = 512 * 1024
+_preview_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _host_is_public(hostname: str) -> bool:
+    """Refuse to preview anything that resolves to a private/internal address.
+
+    Target URLs are admin-registered, so this is defence in depth (the Cloud
+    Run metadata server being the classic target), not the primary gate.
+    """
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except OSError:
+        return False
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_unspecified:
+            return False
+    return True
+
+
+def _fetch_url_html(url: str) -> tuple[str, str]:
+    """GET a registered target URL, capped in size and time. Split out for tests.
+
+    Returns (html, final_url). Raises on anything non-HTML or non-public.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or not _host_is_public(parsed.hostname):
+        raise ValueError("not previewable")
+    r = requests.get(
+        url,
+        timeout=(3, 5),
+        stream=True,
+        allow_redirects=True,
+        headers={"User-Agent": "TPE-ShortLinks-LinkPreview/1.0 (+https://url.taipei/check)"},
+    )
+    final = urlparse(r.url)
+    if final.scheme not in ("http", "https") or not final.hostname or not _host_is_public(final.hostname):
+        raise ValueError("not previewable")
+    if "text/html" not in r.headers.get("content-type", ""):
+        raise ValueError("not html")
+    raw = b""
+    for chunk in r.iter_content(65536):
+        raw += chunk
+        if len(raw) >= _PREVIEW_MAX_BYTES:
+            break
+    enc = r.encoding if r.encoding and r.encoding.lower() != "iso-8859-1" else (r.apparent_encoding or "utf-8")
+    try:
+        return raw.decode(enc, errors="replace"), r.url
+    except LookupError:
+        return raw.decode("utf-8", errors="replace"), r.url
+
+
+def _meta_content(html_text: str, key: str) -> str | None:
+    for pat in (
+        rf'<meta[^>]+(?:property|name)=["\']{key}["\'][^>]*?content=["\']([^"\']*)["\']',
+        rf'<meta[^>]+content=["\']([^"\']*)["\'][^>]*?(?:property|name)=["\']{key}["\']',
+    ):
+        m = re.search(pat, html_text, re.IGNORECASE)
+        if m:
+            value = unescape(m.group(1)).strip()
+            if value:
+                return value
+    return None
+
+
+@app.get("/api/check-preview/{target:path}")
+def check_preview(target: str, db: Session = Depends(get_db)) -> dict:
+    """查核頁的目標網站連結卡片：標題／描述／代表圖，取自目標網頁的公開 meta 標籤。
+
+    Only ever fetches URLs registered in the database — this must never become
+    a free fetch-anything proxy — and only for links that currently resolve.
+    """
+    if target.startswith("f/") or is_reserved(target, db):
+        raise HTTPException(status_code=404, detail="No preview")
+    link = db.execute(select(ShortLink).where(ShortLink.code == target)).scalar_one_or_none()
+    if link is None or link.status != "active":
+        raise HTTPException(status_code=404, detail="No preview")
+    expires_at = as_utc(link.expires_at)
+    if expires_at is not None and expires_at <= now_utc():
+        raise HTTPException(status_code=404, detail="No preview")
+
+    url = link.original_url
+    now = time.monotonic()
+    cached = _preview_cache.get(url)
+    if cached is not None and now - cached[0] < _PREVIEW_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        html_text, final_url = _fetch_url_html(url)
+    except (requests.RequestException, ValueError):
+        raise HTTPException(status_code=404, detail="No preview")
+
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
+    image = _meta_content(html_text, "og:image")
+    preview = {
+        "title": _meta_content(html_text, "og:title")
+        or (unescape(title_match.group(1)).strip() if title_match else None),
+        "description": _meta_content(html_text, "og:description") or _meta_content(html_text, "description"),
+        "image": urljoin(final_url, image) if image else None,
+        "site_name": _meta_content(html_text, "og:site_name"),
+    }
+    if not any(preview.values()):
+        raise HTTPException(status_code=404, detail="No preview")
+    if len(_preview_cache) > 256:
+        _preview_cache.clear()
+    _preview_cache[url] = (now, preview)
+    return preview
 
 
 @app.get("/api/qr-status/{target:path}")

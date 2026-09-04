@@ -244,6 +244,14 @@ export const api = {
     apiFetch<{ kind: 'link' | 'file_share'; state: string; original_url: string | null }>(
       `/api/check/${target}`,
     ),
+  /** 查核頁的目標網站連結卡片，取自目標網頁的公開 meta 標籤；無資料時 404。 */
+  getCheckPreview: (target: string) =>
+    apiFetch<{
+      title: string | null;
+      description: string | null;
+      image: string | null;
+      site_name: string | null;
+    }>(`/api/check-preview/${target}`),
   listBlockedWords: () => apiFetch<string[]>('/api/blocked-words'),
   addBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words?word=${encodeURIComponent(word)}`, { method: 'POST' }),
   deleteBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),

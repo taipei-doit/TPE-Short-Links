@@ -12,6 +12,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { api } from '../api/client';
 
+type Preview = {
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  site_name: string | null;
+};
+
 const PUBLIC_BASE = 'https://url.taipei';
 const TARGET_RE = /^(f\/)?[A-Za-z0-9_-]{1,32}$/;
 
@@ -150,6 +157,24 @@ export function CheckPage() {
 
 function ResultCard({ target, result }: { target: string; result: CheckResult }) {
   const shortUrl = `${PUBLIC_BASE}/${target}`;
+  const isActiveLink = result.kind === 'link' && result.state === 'active';
+
+  // 卡片是加分項：查核結果先出，卡片抓得到再補上，抓不到就安靜略過。
+  const [preview, setPreview] = useState<Preview | null>(null);
+  useEffect(() => {
+    setPreview(null);
+    if (!isActiveLink) return;
+    let alive = true;
+    api
+      .getCheckPreview(target)
+      .then((p) => {
+        if (alive) setPreview(p);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [target, isActiveLink]);
 
   if (result.state === 'not_found') {
     return (
@@ -208,6 +233,40 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
         >
           {result.original_url}
         </Text>
+        {preview && (
+          <Card withBorder radius="md" padding={0} style={{ overflow: 'hidden' }}>
+            {preview.image && (
+              <img
+                src={preview.image}
+                alt=""
+                style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            )}
+            <Stack gap={4} p="md">
+              {preview.site_name && (
+                <Text size="xs" c="dimmed">
+                  {preview.site_name}
+                </Text>
+              )}
+              {preview.title && (
+                <Text fw={600} size="sm">
+                  {preview.title}
+                </Text>
+              )}
+              {preview.description && (
+                <Text size="sm" c="dimmed" lineClamp={2}>
+                  {preview.description}
+                </Text>
+              )}
+              <Text size="xs" c="dimmed" mt={4}>
+                目標網站預覽，擷取自該網站的公開資訊
+              </Text>
+            </Stack>
+          </Card>
+        )}
         <Text size="xs" c="dimmed">
           提醒：請確認上方目標網域是否為您預期的網站；本查詢頁僅適用於 url.taipei
           的短網址，無法查核其他服務產生的連結。
