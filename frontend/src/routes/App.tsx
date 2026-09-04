@@ -5,6 +5,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { AdminsPage } from './AdminsPage';
 import { BlockedWordsPage } from './BlockedWordsPage';
+import { CheckPage } from './CheckPage';
 import { CreatePage } from './CreatePage';
 import { FilesPage } from './FilesPage';
 import { LoginPage } from './LoginPage';
@@ -16,8 +17,10 @@ export function App() {
   const location = useLocation();
   const { user, loading, signOut } = useAuth();
 
-  // QR 產生器是公開頁面，不需要登入，也不等待登入狀態載入。
-  const isQrStudio = location.pathname === '/qr' || location.pathname.startsWith('/qr/');
+  // QR 產生器與民眾查核頁是公開頁面，不需要登入，也不等待登入狀態載入。
+  const isPublicPage = ['/qr', '/check'].some(
+    (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+  );
 
   const navItems = [
     { path: '/create', label: '建立短網址', icon: IconLink },
@@ -115,9 +118,10 @@ export function App() {
       </AppShell.Header>
       <AppShell.Main>
         <Container size="lg" py="xl">
-          {isQrStudio ? (
+          {isPublicPage ? (
             <Routes>
               <Route path="/qr/*" element={<QrStudioPage />} />
+              <Route path="/check/*" element={<CheckPage />} />
             </Routes>
           ) : loading ? (
             <div style={{ padding: '2rem', textAlign: 'center' }}>載入中…</div>

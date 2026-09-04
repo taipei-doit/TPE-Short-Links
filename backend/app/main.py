@@ -534,6 +534,37 @@ def qr_mark_for_admins(_auth: dict = Depends(get_firebase_user)) -> dict:
     return {"mark": _qr_mark()}
 
 
+@app.get("/api/check/{target:path}")
+def check_target(target: str, db: Session = Depends(get_db)) -> dict:
+    """民眾防詐查核：回報短網址現況，僅有效連結才揭露目標網址。
+
+    A link disabled for cause must not keep advertising where it used to go,
+    so anything but an active link returns its state only.
+    """
+    if target.startswith("f/"):
+        share = db.execute(select(FileShare).where(FileShare.code == target[2:])).scalar_one_or_none()
+        if share is None or share.status == "deleted":
+            return {"kind": "file_share", "state": "not_found", "original_url": None}
+        if share.status == "disabled":
+            return {"kind": "file_share", "state": "disabled", "original_url": None}
+        share_expiry = as_utc(share.expires_at)
+        if share_expiry is not None and share_expiry <= now_utc():
+            return {"kind": "file_share", "state": "expired", "original_url": None}
+        return {"kind": "file_share", "state": "active", "original_url": None}
+
+    if is_reserved(target, db):
+        return {"kind": "link", "state": "not_found", "original_url": None}
+    link = db.execute(select(ShortLink).where(ShortLink.code == target)).scalar_one_or_none()
+    if link is None:
+        return {"kind": "link", "state": "not_found", "original_url": None}
+    if link.status == "disabled":
+        return {"kind": "link", "state": "disabled", "original_url": None}
+    expires_at = as_utc(link.expires_at)
+    if expires_at is not None and expires_at <= now_utc():
+        return {"kind": "link", "state": "expired", "original_url": None}
+    return {"kind": "link", "state": "active", "original_url": link.original_url}
+
+
 @app.get("/api/qr-status/{target:path}")
 def qr_status(target: str, db: Session = Depends(get_db)) -> dict[str, str]:
     """Minimal link-state lookup so the QR studio can warn about typos.
@@ -920,11 +951,8 @@ def qr_studio_root() -> Response:
     return redirect_to_not_found()
 
 
-@app.get("/qr/{target:path}")
-def qr_studio(target: str, db: Session = Depends(get_db)) -> Response:
-    # Server-side existence check — devtools can't talk a 404 into a page.
-    if not _qr_target_exists(target, db):
-        return redirect_to_not_found()
+def _serve_spa_index() -> HTMLResponse:
+    """Serve the SPA index proxied from the static hosting (cached, stale-on-error)."""
     now = time.monotonic()
     cached = _studio_index_cache.get("index")
     if cached is not None and now - cached[0] < _STUDIO_INDEX_TTL_SECONDS:
@@ -938,8 +966,24 @@ def qr_studio(target: str, db: Session = Depends(get_db)) -> Response:
     elif cached is not None:
         body = cached[1]  # stale beats broken while hosting hiccups
     else:
-        raise HTTPException(status_code=503, detail="QR studio temporarily unavailable")
+        raise HTTPException(status_code=503, detail="Page temporarily unavailable")
     return HTMLResponse(content=body, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/qr/{target:path}")
+def qr_studio(target: str, db: Session = Depends(get_db)) -> Response:
+    # Server-side existence check — devtools can't talk a 404 into a page.
+    if not _qr_target_exists(target, db):
+        return redirect_to_not_found()
+    return _serve_spa_index()
+
+
+# 民眾查核頁：與 /qr 相反，刻意全開放（含裸路徑的輸入框），
+# 讓民眾在點擊前就能確認短網址會轉去哪裡。
+@app.get("/check")
+@app.get("/check/{target:path}")
+def check_page(target: str = "") -> Response:
+    return _serve_spa_index()
 
 
 @app.get("/assets/{filename}")

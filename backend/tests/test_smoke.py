@@ -155,7 +155,42 @@ def test_qr_status_public_lookup(client: TestClient):
     assert client.get("/api/qr-status/QS123").json() == {"state": "disabled"}
 
 
-def test_qr_code_is_reserved(client: TestClient):
+def test_public_check_endpoint(client: TestClient):
+    create_link(client, "https://example.com/checkme", code="CHK01")
+
+    res = client.get("/api/check/CHK01").json()
+    assert res == {"kind": "link", "state": "active", "original_url": "https://example.com/checkme"}
+
+    # Anything but an active link reveals its state only, never the target.
+    assert client.post("/api/links/CHK01/disable").status_code == 200
+    res = client.get("/api/check/CHK01").json()
+    assert res["state"] == "disabled"
+    assert res["original_url"] is None
+
+    assert client.get("/api/check/NOPE99").json()["state"] == "not_found"
+    assert client.get("/api/check/check").json()["state"] == "not_found"
+    assert client.get("/api/check/f/NOSHARE").json() == {
+        "kind": "file_share",
+        "state": "not_found",
+        "original_url": None,
+    }
+
+
+def test_check_page_is_open(client: TestClient, monkeypatch):
+    import app.main as main_module
+
+    monkeypatch.setattr(
+        main_module, "_fetch_frontend", lambda path: (200, b"<html>studio</html>", "text/html")
+    )
+    main_module._studio_index_cache.clear()
+
+    # Unlike /qr, the check page serves for any target and even bare /check.
+    for path in ("/check", "/check/ANY9", "/check/f/WHATEVER"):
+        res = client.get(path)
+        assert res.status_code == 200, path
+        assert "studio" in res.text
+
+    main_module._studio_index_cache.clear()
     payload = {"original_url": "https://example.com/qr", "tag_id": 1, "expires_at": None, "note": None, "code": "qr"}
     res = client.post("/api/links", json=payload)
     assert res.status_code == 422

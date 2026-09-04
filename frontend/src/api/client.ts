@@ -239,6 +239,11 @@ export const api = {
     }),
   /** 已登入管理員免 PIN 直接取得市徽。 */
   getQrMark: () => apiFetch<{ mark: { viewBox: string; body: string } }>('/api/qr-mark'),
+  /** 公開防詐查核：僅有效連結會回傳目標網址。 */
+  checkTarget: (target: string) =>
+    apiFetch<{ kind: 'link' | 'file_share'; state: string; original_url: string | null }>(
+      `/api/check/${target}`,
+    ),
   listBlockedWords: () => apiFetch<string[]>('/api/blocked-words'),
   addBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words?word=${encodeURIComponent(word)}`, { method: 'POST' }),
   deleteBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),
