@@ -1146,6 +1146,12 @@ def check_page(target: str = "") -> Response:
     return _serve_spa_index()
 
 
+# 無障礙聲明頁（標章申請要件：每頁頁尾都連得到）。
+@app.get("/accessibility")
+def accessibility_page() -> Response:
+    return _serve_spa_index()
+
+
 @app.get("/assets/{filename}")
 def frontend_asset(filename: str = Path(..., min_length=1, max_length=128)) -> Response:
     if not _ASSET_NAME_RE.match(filename):

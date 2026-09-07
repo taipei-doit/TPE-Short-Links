@@ -6,6 +6,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { AdminsPage } from './AdminsPage';
 import { BlockedWordsPage } from './BlockedWordsPage';
+import { AccessibilityPage } from './AccessibilityPage';
 import { CheckPage } from './CheckPage';
 import { LandingPage } from './LandingPage';
 import { CreatePage } from './CreatePage';
@@ -27,7 +28,9 @@ export function App() {
   const isLanding = location.pathname === '/' && isPublicHost;
   const isPublicPage =
     isLanding ||
-    ['/qr', '/check'].some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`));
+    ['/qr', '/check', '/accessibility'].some(
+      (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+    );
 
   const navItems = [
     { path: '/create', label: '建立短網址', icon: IconLink },
@@ -56,7 +59,14 @@ export function App() {
       }}
     >
       <AppShell.Header>
-        <Container h="100%" size="lg">
+        {/* 台灣無障礙規範慣例：三區塊導盲磚與快速鍵 Alt+U / Alt+C / Alt+Z */}
+        <a className="access-key-link" href="#header-block" id="AU" accessKey="U" title="上方功能區塊">
+          :::
+        </a>
+        <a className="access-key-link" href="#main-block" title="跳到主要內容">
+          跳到主要內容
+        </a>
+        <Container h="100%" size="lg" id="header-block">
           <Group h="100%" justify="space-between" align="center" gap="xl">
             <Title
               order={3}
@@ -71,7 +81,14 @@ export function App() {
             >
               臺北市短網址服務
             </Title>
-            <Group gap="xs" align="center" wrap="nowrap" visibleFrom="lg">
+            <Group
+              component="nav"
+              aria-label="主要功能選單"
+              gap="xs"
+              align="center"
+              wrap="nowrap"
+              visibleFrom="lg"
+            >
               {user && navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
@@ -179,21 +196,35 @@ export function App() {
         </Drawer>
       )}
       <AppShell.Main>
-        <Container size="lg" py="xl">
+        <a className="access-key-link" href="#main-block" id="AC" accessKey="C" title="中央內容區塊">
+          :::
+        </a>
+        <Container size="lg" py="xl" id="main-block">
           {isPublicPage ? (
             <>
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/qr/*" element={<QrStudioPage />} />
                 <Route path="/check/*" element={<CheckPage />} />
+                <Route path="/accessibility" element={<AccessibilityPage />} />
               </Routes>
               <Group
+                component="footer"
+                id="footer-block"
                 justify="space-between"
                 mt={64}
                 pt="md"
                 pb="md"
-                style={{ borderTop: '1px solid var(--mantine-color-gray-3)', maxWidth: 720, margin: '64px auto 0' }}
+                style={{
+                  borderTop: '1px solid var(--mantine-color-gray-3)',
+                  maxWidth: 720,
+                  margin: '64px auto 0',
+                  position: 'relative',
+                }}
               >
+                <a className="access-key-link" href="#footer-block" id="AZ" accessKey="Z" title="下方功能區塊">
+                  :::
+                </a>
                 <Text
                   size="xs"
                   c="dimmed"
@@ -225,6 +256,15 @@ export function App() {
                         style={{ textDecoration: 'none' }}
                       >
                         短網址查核
+                      </Text>
+                      <Text
+                        size="xs"
+                        c="dimmed"
+                        component={Link}
+                        to="/accessibility"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        無障礙聲明
                       </Text>
                     </>
                   )}

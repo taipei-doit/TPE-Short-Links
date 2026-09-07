@@ -251,7 +251,7 @@ def test_check_page_is_open(client: TestClient, monkeypatch):
     main_module._studio_index_cache.clear()
 
     # Unlike /qr, the check page serves for any target and even bare /check.
-    for path in ("/check", "/check/ANY9", "/check/f/WHATEVER"):
+    for path in ("/check", "/check/ANY9", "/check/f/WHATEVER", "/accessibility"):
         res = client.get(path)
         assert res.status_code == 200, path
         assert "studio" in res.text

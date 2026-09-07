@@ -93,7 +93,9 @@ function StudioNotFound() {
   return (
     <Card withBorder padding="xl" radius="md" style={{ ...cardStyle, maxWidth: 480, margin: '4rem auto' }}>
       <Stack gap="sm" align="center">
-        <Title order={3}>找不到這個頁面</Title>
+        <Title order={1} style={{ fontSize: '1.4rem' }}>
+          找不到這個頁面
+        </Title>
         <Text size="sm" c="dimmed" ta="center">
           QR Code 產生器需要透過有效的短網址開啟（例如 url.taipei/qr/代碼），請確認承辦提供的網址是否完整。
         </Text>
@@ -149,8 +151,10 @@ function StudioGate({ target }: { target: string }) {
     <Card withBorder padding="xl" radius="md" style={{ ...cardStyle, maxWidth: 480, margin: '4rem auto' }}>
       <Stack gap="md">
         <Group gap="xs">
-          <IconLock size={22} />
-          <Title order={3}>QR Code 產生器</Title>
+          <IconLock size={22} aria-hidden />
+          <Title order={1} style={{ fontSize: '1.4rem' }}>
+            QR Code 產生器
+          </Title>
         </Group>
         <Text size="sm" c="dimmed">
           此產生器供臺北市政府各機關使用。請輸入承辦提供的

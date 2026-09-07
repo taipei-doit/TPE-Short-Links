@@ -30,11 +30,12 @@ NOT_FOUND_HTML = f"""<!doctype html>
   </head>
   <body>
     <div class="wrap">
-      <div class="card">
+      <main class="card">
         <h1>抱歉！找不到您要找的頁面。</h1>
         <p>如網址正確，表示該頁面已下架或連結已失效，</p>
         <p>如需了解進一步資訊，請逕洽網站頁面之主責機關。</p>
-      </div>
+        <p><a href="/" style="color:#0F5C86; font-weight:600;">回到 url.taipei 服務首頁</a></p>
+      </main>
     </div>
   </body>
 </html>"""

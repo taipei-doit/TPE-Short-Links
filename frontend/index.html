@@ -11,6 +11,26 @@
       href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&display=swap"
       rel="stylesheet"
     />
+    <style>
+      /* 無障礙導盲磚（:::）與跳至主要內容連結：平時隱藏，鍵盤聚焦時浮現 */
+      .access-key-link {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        z-index: 2000;
+        padding: 6px 12px;
+        background: #ffffff;
+        color: #16324a;
+        font-weight: 700;
+        text-decoration: none;
+        border: 2px solid #0f5c86;
+        border-radius: 4px;
+      }
+      .access-key-link:focus {
+        left: 8px;
+        top: 8px;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

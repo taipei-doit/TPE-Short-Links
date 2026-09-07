@@ -61,7 +61,7 @@ class Settings(BaseSettings):
         # links with these codes could never be reached. Case variants of
         # "qr" are technically reachable (routing is case-sensitive) but
         # reserved anyway to avoid confusion.
-        codes |= {"qr", "QR", "Qr", "qR", "assets", "check"}
+        codes |= {"qr", "QR", "Qr", "qR", "assets", "check", "accessibility"}
         return codes
 
 
