@@ -615,6 +615,7 @@ export function FilesPage() {
             />
             <Select
               label="有效期限"
+              description="逾期後分享連結自動失效，檔案保留 30 天供復原"
               data={[
                 { value: '1', label: '1 天後失效' },
                 { value: '7', label: '7 天後失效' },
@@ -640,6 +641,7 @@ export function FilesPage() {
           <Group align="flex-start" grow>
             <TextInput
               label="備註"
+              description="選填，僅供管理介面內部辨識"
               placeholder="例如：長官交辦、會議簡報"
               value={note}
               onChange={(e) => setNote(e.currentTarget.value)}
