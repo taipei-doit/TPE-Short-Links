@@ -206,6 +206,6 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 
 ## 貢獻者
 
-- **Wei Song Zhan**（臺北市政府資訊局）— 系統維運與開發
+- **vaso0130**（臺北市政府資訊局）— 系統維運與開發
 - 以及一位署名時會害羞的 AI 協作者
 
