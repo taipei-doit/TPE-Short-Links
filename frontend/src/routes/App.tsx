@@ -1,4 +1,4 @@
-import { AppShell, Button, Container, Group, Title } from '@mantine/core';
+import { AppShell, Button, Container, Group, Text, Title } from '@mantine/core';
 import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import { AdminsPage } from './AdminsPage';
 import { BlockedWordsPage } from './BlockedWordsPage';
 import { CheckPage } from './CheckPage';
+import { LandingPage } from './LandingPage';
 import { CreatePage } from './CreatePage';
 import { FilesPage } from './FilesPage';
 import { LoginPage } from './LoginPage';
@@ -18,9 +19,13 @@ export function App() {
   const { user, loading, signOut } = useAuth();
 
   // QR 產生器與民眾查核頁是公開頁面，不需要登入，也不等待登入狀態載入。
-  const isPublicPage = ['/qr', '/check'].some(
-    (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
-  );
+  // 根路徑只在對外網域（url.taipei，經後端代理）當服務聲明頁；
+  // 管理網域的根路徑仍走登入導向。
+  const isPublicHost = window.location.hostname === 'url.taipei';
+  const isLanding = location.pathname === '/' && isPublicHost;
+  const isPublicPage =
+    isLanding ||
+    ['/qr', '/check'].some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`));
 
   const navItems = [
     { path: '/create', label: '建立短網址', icon: IconLink },
@@ -37,7 +42,8 @@ export function App() {
       padding="lg"
       styles={{
         main: {
-          background: 'linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%)',
+          // 公開頁走紙感白底；管理端維持原本的灰藍漸層。
+          background: isPublicPage ? '#FAFBFC' : 'linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%)',
           minHeight: '100vh',
         },
         header: {
@@ -119,10 +125,46 @@ export function App() {
       <AppShell.Main>
         <Container size="lg" py="xl">
           {isPublicPage ? (
-            <Routes>
-              <Route path="/qr/*" element={<QrStudioPage />} />
-              <Route path="/check/*" element={<CheckPage />} />
-            </Routes>
+            <>
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/qr/*" element={<QrStudioPage />} />
+                <Route path="/check/*" element={<CheckPage />} />
+              </Routes>
+              <Group
+                justify="space-between"
+                mt={64}
+                pt="md"
+                pb="md"
+                style={{ borderTop: '1px solid var(--mantine-color-gray-3)', maxWidth: 720, margin: '64px auto 0' }}
+              >
+                <Text size="xs" c="dimmed">
+                  © 臺北市政府資訊局
+                </Text>
+                {isPublicHost && (
+                  <Group gap="lg">
+                    <Text
+                      size="xs"
+                      c="dimmed"
+                      component={Link}
+                      to="/"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      服務聲明與隱私權宣告
+                    </Text>
+                    <Text
+                      size="xs"
+                      c="dimmed"
+                      component={Link}
+                      to="/check"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      短網址查核
+                    </Text>
+                  </Group>
+                )}
+              </Group>
+            </>
           ) : loading ? (
             <div style={{ padding: '2rem', textAlign: 'center' }}>載入中…</div>
           ) : !user ? (

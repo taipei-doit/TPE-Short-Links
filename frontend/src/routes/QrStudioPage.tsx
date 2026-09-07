@@ -20,6 +20,8 @@ import { notifications } from '@mantine/notifications';
 
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { INK, SERIF_TC } from '../publicTheme';
+import { EmblemStripe } from './LandingPage';
 import { DEFAULT_PRESET_ID, QR_PRESETS, getPreset } from '../qr/presets';
 import { renderQrSvg, svgToPngBlob, type Ecl, type LogoMark, type QrStyle } from '../qr/render';
 
@@ -326,18 +328,22 @@ function StudioEditor({ target, mark }: { target: string; mark: LogoMark }) {
 
   return (
     <Stack gap="xl">
-      <div>
-        <Title order={1} style={{ marginBottom: '8px', fontWeight: 700 }}>
+      <Stack gap="sm" pt="md">
+        <Title
+          order={1}
+          style={{ margin: 0, fontFamily: SERIF_TC, color: INK, fontWeight: 900, letterSpacing: 2 }}
+        >
           QR Code 產生器
         </Title>
-        <Text c="dimmed" size="sm">
+        <EmblemStripe width={168} />
+        <Text c="dark.6" size="sm" style={{ lineHeight: 1.9 }}>
           此 QR Code 掃描後將前往{isFileShare ? '檔案分享頁' : '短網址'}{' '}
           <Text span fw={600} c="blue">
             {targetUrl}
           </Text>
           ；圖檔完全在您的瀏覽器產生，不會上傳任何資料。
         </Text>
-      </div>
+      </Stack>
 
       {LINK_STATE_WARNINGS[linkState] && (
         <Alert color="yellow" icon={<IconAlertTriangle size={18} />} title="連結狀態提醒">

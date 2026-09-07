@@ -1051,12 +1051,12 @@ def not_found_page() -> HTMLResponse:
     return HTMLResponse(content=NOT_FOUND_HTML, status_code=200)
 
 
-# Bare url.taipei/ matches no route (the catch-all needs a non-empty code),
-# which used to leak FastAPI's raw JSON 404. Send people to the same page
-# every other dead end uses.
+# Bare url.taipei/ serves the public landing page (official statement,
+# privacy notice, link-check entry) instead of a dead end — someone who
+# trims the code off a link should learn what this service is.
 @app.get("/")
 def root() -> Response:
-    return redirect_to_not_found()
+    return _serve_spa_index()
 
 
 # The QR style studio is a public, unauthenticated page in the static frontend.

@@ -31,10 +31,19 @@ def test_unknown_code_redirects_to_404_page(client: TestClient):
     assert res.headers["location"].endswith("/404.html")
 
 
-def test_bare_root_redirects_to_404_page(client: TestClient):
+def test_bare_root_serves_landing_page(client: TestClient, monkeypatch):
+    import app.main as main_module
+
+    monkeypatch.setattr(
+        main_module, "_fetch_frontend", lambda path: (200, b"<html>studio</html>", "text/html")
+    )
+    main_module._studio_index_cache.clear()
+
     res = client.get("/", follow_redirects=False)
-    assert res.status_code == 302
-    assert res.headers["location"].endswith("/404.html")
+    assert res.status_code == 200
+    assert "studio" in res.text
+
+    main_module._studio_index_cache.clear()
 
 
 def test_disabled_code_redirects_to_404_page(client: TestClient):

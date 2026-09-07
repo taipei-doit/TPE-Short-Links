@@ -12,6 +12,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { api } from '../api/client';
+import { INK, SERIF_TC } from '../publicTheme';
+import { EmblemStripe } from './LandingPage';
 
 type Preview = {
   title: string | null;
@@ -91,22 +93,32 @@ export function CheckPage() {
 
   return (
     <Stack gap="xl" style={{ maxWidth: 760, margin: '0 auto' }}>
-      <div>
-        <Group gap="xs" mb={8}>
-          <IconShieldCheck size={30} color="var(--mantine-color-blue-7)" />
-          <Title order={1} style={{ margin: 0, fontWeight: 700 }}>
+      <Stack gap="sm" pt="md">
+        <Group gap="sm" align="center">
+          <IconShieldCheck size={30} color={INK} />
+          <Title
+            order={1}
+            style={{
+              margin: 0,
+              fontFamily: SERIF_TC,
+              color: INK,
+              fontWeight: 900,
+              letterSpacing: 2,
+            }}
+          >
             短網址查核
           </Title>
         </Group>
-        <Text c="dimmed" size="sm">
+        <EmblemStripe width={168} />
+        <Text c="dark.6" size="sm" style={{ lineHeight: 1.9 }}>
           url.taipei 是臺北市政府的官方短網址服務。在這裡輸入您收到的短網址，
-          即可在點擊前確認它將轉向哪個網站。本頁的官方網址是{' '}
+          即可在開啟前確認它將前往哪個網站。本頁的官方網址是{' '}
           <Text span fw={600}>
             {PUBLIC_BASE}/check
           </Text>
           。
         </Text>
-      </div>
+      </Stack>
 
       <Card withBorder padding="xl" radius="md" style={cardStyle}>
         <Stack gap="md">
