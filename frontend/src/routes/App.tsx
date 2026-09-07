@@ -247,7 +247,7 @@ export function App() {
                 pb="md"
                 style={{
                   borderTop: '1px solid var(--mantine-color-gray-3)',
-                  maxWidth: 720,
+                  maxWidth: '40em',
                   margin: '64px auto 0',
                   position: 'relative',
                 }}

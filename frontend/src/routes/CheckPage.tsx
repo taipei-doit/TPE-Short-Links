@@ -92,7 +92,7 @@ export function CheckPage() {
   };
 
   return (
-    <Stack gap="xl" style={{ maxWidth: 760, margin: '0 auto' }}>
+    <Stack gap="xl" style={{ maxWidth: '40em', margin: '0 auto' }}>
       <Stack gap="sm" pt="md">
         <Group gap="sm" align="center">
           <IconShieldCheck size={30} color={INK} />

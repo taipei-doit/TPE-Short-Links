@@ -42,7 +42,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export function LandingPage() {
   return (
-    <Stack gap={56} style={{ maxWidth: 720, margin: '0 auto' }}>
+    <Stack gap={56} style={{ maxWidth: '40em', margin: '0 auto' }}>
       {/* 銜名＋大標：公文的開頭 */}
       <Stack gap="md" pt="md">
         <Text size="sm" fw={600} c="dark.4" style={{ letterSpacing: 4 }}>

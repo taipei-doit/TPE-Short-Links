@@ -22,7 +22,7 @@ const ACCESS_KEYS = [
 
 export function AccessibilityPage() {
   return (
-    <Stack gap={48} style={{ maxWidth: 720, margin: '0 auto' }}>
+    <Stack gap={48} style={{ maxWidth: '40em', margin: '0 auto' }}>
       <Stack gap="md" pt="md">
         <Text size="sm" fw={600} c="dark.4" style={{ letterSpacing: 4 }}>
           臺北市政府資訊局

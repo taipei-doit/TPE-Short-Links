@@ -14,10 +14,11 @@ PAGE_STYLE = """
       :root { color-scheme: light; }
       * { box-sizing: border-box; }
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", Arial, sans-serif; background:#f8fafc; color:#0f172a; margin:0; }
-      .wrap { max-width: 720px; margin: 72px auto; padding: 0 20px; }
-      .card { background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:28px; box-shadow: 0 10px 25px rgba(15,23,42,0.08); }
-      h1 { font-size: 28px; margin: 0 0 12px; }
-      p { font-size: 16px; line-height: 1.7; margin: 0 0 8px; color:#334155; }
+      /* 無障礙檢核：字型與欄寬用相對單位，欄寬 38em ≈ 38 個中文字（上限 40） */
+      .wrap { max-width: 38em; margin: 4.5em auto; padding: 0 1.25em; }
+      .card { background:#fff; border:1px solid #e2e8f0; border-radius:1em; padding:1.75em; box-shadow: 0 0.6em 1.5em rgba(15,23,42,0.08); }
+      h1 { font-size: 1.75em; margin: 0 0 0.75em; }
+      p { font-size: 1em; line-height: 1.7; margin: 0 0 0.5em; color:#334155; }
 """
 
 NOT_FOUND_HTML = f"""<!doctype html>
