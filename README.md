@@ -203,3 +203,9 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 - [`STATUS_EXPLANATION.md`](STATUS_EXPLANATION.md) — 短網址狀態（使用中／過期／停用）與轉址行為說明
 - [`AUTH_SETUP.md`](AUTH_SETUP.md) — 管理員魔術連結登入設定
 - [`TAGS_AND_WORDS.md`](TAGS_AND_WORDS.md) — 標籤與封鎖字詞維護說明
+
+## 貢獻者
+
+- **Wei Song Zhan**（臺北市政府資訊局）— 系統維運與開發
+- 以及一位署名時會害羞的 AI 協作者
+
