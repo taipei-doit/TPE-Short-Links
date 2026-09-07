@@ -3,14 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="url.taipei 是臺北市政府的官方短網址服務。您可以在此查核收到的短網址是否為本府所發、以及它將前往的網站，防範假冒與詐騙。"
+    />
     <title>臺北市短網址服務</title>
-    <!-- 公開頁大標使用明體（公文語彙）；只載 700/900 兩個字重控制體積 -->
+    <!-- 公開頁大標使用明體（公文語彙）。只載單一字重、且非阻塞載入：
+         先用系統明體畫出文字，網路字型到了再換，不佔關鍵渲染路徑。 -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
     <style>
       /* 無障礙導盲磚（:::）與跳至主要內容連結：平時隱藏，鍵盤聚焦時浮現 */
       .access-key-link {

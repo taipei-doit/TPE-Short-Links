@@ -32,7 +32,7 @@ export function AccessibilityPage() {
           style={{
             fontFamily: SERIF_TC,
             color: INK,
-            fontWeight: 900,
+            fontWeight: 700,
             fontSize: 'clamp(1.8rem, 5vw, 2.5rem)',
             lineHeight: 1.35,
             letterSpacing: 2,

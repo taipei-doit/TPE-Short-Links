@@ -25,6 +25,7 @@ NOT_FOUND_HTML = f"""<!doctype html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
     <title>頁面不存在</title>
     <style>{PAGE_STYLE}</style>
   </head>

@@ -102,7 +102,7 @@ export function CheckPage() {
               margin: 0,
               fontFamily: SERIF_TC,
               color: INK,
-              fontWeight: 900,
+              fontWeight: 700,
               letterSpacing: 2,
             }}
           >

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import gzip as gzip_module
 import io
 import ipaddress
 import json
@@ -1076,7 +1077,7 @@ def root() -> Response:
 _ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _STUDIO_INDEX_TTL_SECONDS = 60.0
 _studio_index_cache: dict[str, tuple[float, bytes]] = {}
-_frontend_asset_cache: dict[str, tuple[bytes, str]] = {}
+_frontend_asset_cache: dict[str, tuple[bytes, str, bytes | None]] = {}
 
 
 def _fetch_frontend(path: str) -> tuple[int, bytes, str]:
@@ -1152,8 +1153,32 @@ def accessibility_page() -> Response:
     return _serve_spa_index()
 
 
+# 沒有這條，/robots.txt 會落進 /{code} 轉去 404 頁，爬蟲就把 404 的
+# HTML 當 robots.txt 解析。內部工具（QR 產生器）與檔案分享不進索引。
+_ROBOTS_TXT = """User-agent: *
+Disallow: /qr
+Disallow: /qr/
+Disallow: /f/
+Disallow: /assets/
+"""
+
+
+@app.get("/robots.txt")
+def robots_txt() -> Response:
+    return Response(content=_ROBOTS_TXT, media_type="text/plain; charset=utf-8")
+
+
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    # 瀏覽器都會自動要，回 204 免得又落進 /{code} 的 404 轉址鏈。
+    return Response(status_code=204)
+
+
+_COMPRESSIBLE_PREFIXES = ("text/", "application/javascript", "application/json", "image/svg")
+
+
 @app.get("/assets/{filename}")
-def frontend_asset(filename: str = Path(..., min_length=1, max_length=128)) -> Response:
+def frontend_asset(request: Request, filename: str = Path(..., min_length=1, max_length=128)) -> Response:
     if not _ASSET_NAME_RE.match(filename):
         raise HTTPException(status_code=404, detail="Not found")
     hit = _frontend_asset_cache.get(filename)
@@ -1164,17 +1189,28 @@ def frontend_asset(filename: str = Path(..., min_length=1, max_length=128)) -> R
             raise HTTPException(status_code=502, detail="Upstream fetch failed")
         if status != 200:
             raise HTTPException(status_code=404, detail="Not found")
+        # requests 會自動解壓上游的回應，不重新壓縮就會把 200KB 的 CSS/JS
+        # 原樣吐給使用者——壓縮版與原版一起進快取，各服務各的。
+        gz = (
+            gzip_module.compress(body, 6)
+            if ctype.startswith(_COMPRESSIBLE_PREFIXES) and len(body) > 1024
+            else None
+        )
         # Filenames are content-hashed and immutable; cache them so a page view
         # costs one upstream fetch at most. Reset wholesale if it ever grows.
         if len(_frontend_asset_cache) > 64:
             _frontend_asset_cache.clear()
-        _frontend_asset_cache[filename] = (body, ctype)
+        _frontend_asset_cache[filename] = (body, ctype, gz)
         hit = _frontend_asset_cache[filename]
-    return Response(
-        content=hit[0],
-        media_type=hit[1],
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
-    )
+    body, ctype, gz = hit
+    base_headers = {"Cache-Control": "public, max-age=31536000, immutable", "Vary": "Accept-Encoding"}
+    if gz is not None and "gzip" in request.headers.get("accept-encoding", "").lower():
+        return Response(
+            content=gz,
+            media_type=ctype,
+            headers={**base_headers, "Content-Encoding": "gzip"},
+        )
+    return Response(content=body, media_type=ctype, headers=base_headers)
 
 
 @app.get("/{code}")

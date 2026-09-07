@@ -53,7 +53,7 @@ export function LandingPage() {
           style={{
             fontFamily: SERIF_TC,
             color: INK,
-            fontWeight: 900,
+            fontWeight: 700,
             fontSize: 'clamp(2rem, 5.5vw, 3rem)',
             lineHeight: 1.35,
             letterSpacing: 2,
@@ -123,7 +123,7 @@ export function LandingPage() {
             查無資料的代碼代表本府從未發出，請提高警覺、切勿開啟。
           </Text>
           <Group mt={6}>
-            <Button component={Link} to="/check" variant="light" radius="md" style={{ minHeight: 44 }}>
+            <Button component={Link} to="/check" radius="md" style={{ minHeight: 44 }}>
               前往短網址查核
             </Button>
           </Group>
@@ -157,12 +157,12 @@ export function LandingPage() {
         <Divider color="gray.3" />
         <Text size="md" c="dark.6" style={{ lineHeight: 1.9 }}>
           本服務由
-          <Anchor href="https://doit.gov.taipei" target="_blank" rel="noopener" fw={600}>
+          <Anchor href="https://doit.gov.taipei" target="_blank" rel="noopener" fw={600} c="blue.8">
             臺北市政府資訊局
           </Anchor>
           維運。若您發現可疑的 url.taipei 連結，或對本服務有任何疑問，歡迎透過臺北市民當家熱線
           1999 反映，本府將儘速處理。更多市政資訊請參閱
-          <Anchor href="https://www.gov.taipei" target="_blank" rel="noopener" fw={600}>
+          <Anchor href="https://www.gov.taipei" target="_blank" rel="noopener" fw={600} c="blue.8">
             臺北市政府全球資訊網
           </Anchor>
           。

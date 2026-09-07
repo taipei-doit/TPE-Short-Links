@@ -36,6 +36,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       cssVariablesResolver={cssVariablesResolver}
       theme={{
         primaryColor: 'blue',
+        // blue-6 對白底僅 3.1:1，過不了 WCAG AA；shade 8 (#1971c2) 為 4.6:1，
+        // 實心按鈕與連結色一併達標。
+        primaryShade: 8,
         defaultRadius: 'md',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif',
         headings: {

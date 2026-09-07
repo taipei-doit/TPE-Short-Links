@@ -12,8 +12,10 @@ import type {
 } from './types';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000';
 
-/** Firebase 動態載入：公開頁面的首屏不必扛整包驗證 SDK。 */
+/** Firebase 動態載入：公開頁面的首屏不必扛整包驗證 SDK。
+ *  對外網域（url.taipei）根本沒有登入這回事，連 SDK 都不載。 */
 async function getAuthHeader(): Promise<Record<string, string>> {
+  if (window.location.hostname === 'url.taipei') return {};
   const { auth } = await import('../firebase');
   if (!auth.currentUser) return {};
   const token = await auth.currentUser.getIdToken();

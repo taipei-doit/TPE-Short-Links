@@ -4,6 +4,10 @@ import { useNavigate } from 'react-router-dom';
 
 const EMAIL_FOR_SIGN_IN_KEY = 'emailForSignIn';
 
+/** 對外網域（url.taipei）純屬公眾服務，完全不載入 Firebase——
+ *  登入與管理一律走 admin.url.taipei。 */
+const IS_PUBLIC_HOST = window.location.hostname === 'url.taipei';
+
 type AuthContextValue = {
   user: User | null;
   loading: boolean;
@@ -29,6 +33,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (IS_PUBLIC_HOST) {
+      setLoading(false);
+      return;
+    }
     let alive = true;
     let unsub: (() => void) | undefined;
 

@@ -335,7 +335,7 @@ function StudioEditor({ target, mark }: { target: string; mark: LogoMark }) {
       <Stack gap="sm" pt="md">
         <Title
           order={1}
-          style={{ margin: 0, fontFamily: SERIF_TC, color: INK, fontWeight: 900, letterSpacing: 2 }}
+          style={{ margin: 0, fontFamily: SERIF_TC, color: INK, fontWeight: 700, letterSpacing: 2 }}
         >
           QR Code 產生器
         </Title>
