@@ -32,6 +32,7 @@ import html
 import json
 import logging
 import mimetypes
+import re
 import os
 import re
 import secrets
@@ -377,8 +378,20 @@ def create_share(
     else:
         plain_pin = generate_pin()
 
+    # 自訂代碼比照短網址：只驗字元、長度與唯一性（/f/ 是獨立命名空間，
+    # 不會與短網址代碼衝突）。
+    if payload.code:
+        code = payload.code.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", code):
+            raise HTTPException(status_code=422, detail="代碼只能使用英文字母、數字、底線與連字號")
+        exists = db.execute(select(FileShare.code).where(FileShare.code == code)).first()
+        if exists is not None:
+            raise HTTPException(status_code=409, detail="此代碼已被使用，請換一個")
+    else:
+        code = generate_share_code(db)
+
     share = FileShare(
-        code=generate_share_code(db),
+        code=code,
         pin_hash=hash_pin(plain_pin),
         note=(payload.note or None),
         status="active",

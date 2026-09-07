@@ -216,7 +216,7 @@ def create_link(
         existing = link_to_out(existing_link, existing_tag_name)
         raise HTTPException(
             status_code=409,
-            detail=f"A short link already exists for this URL: {existing.short_url}",
+            detail=f"此網址已建立過短網址：{existing.short_url}",
         )
 
     # Handle manual code or auto-generate
@@ -282,6 +282,8 @@ def list_links(
     status: Literal["active", "disabled", "expired", "all"] | None = Query(default="all"),
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    sort: Literal["created_at", "click_count", "expires_at", "code"] = Query(default="created_at"),
+    order: Literal["asc", "desc"] = Query(default="desc"),
     db: Session = Depends(get_db),
 ) -> LinkListOut:
     now = now_utc()
@@ -315,8 +317,15 @@ def list_links(
 
     total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
 
+    sort_column = {
+        "created_at": ShortLink.created_at,
+        "click_count": ShortLink.click_count,
+        "expires_at": ShortLink.expires_at,
+        "code": ShortLink.code,
+    }[sort]
+    order_by = sort_column.asc() if order == "asc" else sort_column.desc()
     rows = (
-        db.execute(base.order_by(ShortLink.created_at.desc()).limit(limit).offset(offset))
+        db.execute(base.order_by(order_by, ShortLink.id.desc()).limit(limit).offset(offset))
         .all()
     )
     items = [link_to_out(link, tag_name) for (link, tag_name) in rows]
@@ -1026,7 +1035,7 @@ def update_link(
             existing = link_to_out(existing_link, existing_tag_name)
             raise HTTPException(
                 status_code=409,
-                detail=f"A short link already exists for this URL: {existing.short_url}",
+                detail=f"此網址已建立過短網址：{existing.short_url}",
             )
         link.original_url = new_url
 

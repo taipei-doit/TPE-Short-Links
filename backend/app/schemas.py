@@ -125,6 +125,8 @@ class FileShareCreateIn(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
     expires_at: dt.datetime | None = None
     pin: str | None = Field(default=None, max_length=64)
+    # 自訂代碼（選填），比照短網址：留空自動產生
+    code: str | None = Field(default=None, min_length=1, max_length=32)
 
 
 class FileShareUpdateIn(BaseModel):

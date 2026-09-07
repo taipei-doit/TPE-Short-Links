@@ -164,6 +164,33 @@ def test_qr_status_public_lookup(client: TestClient):
     assert client.get("/api/qr-status/QS123").json() == {"state": "disabled"}
 
 
+def test_create_share_with_custom_code(client: TestClient):
+    res = client.post("/api/shares", json={"note": None, "expires_at": None, "pin": None, "code": "MyShare1"})
+    assert res.status_code == 200, res.text
+    assert res.json()["code"] == "MyShare1"
+
+    # Duplicate custom code is rejected with a readable message.
+    res = client.post("/api/shares", json={"note": None, "expires_at": None, "pin": None, "code": "MyShare1"})
+    assert res.status_code == 409
+    assert "已被使用" in res.text
+
+    res = client.post("/api/shares", json={"note": None, "expires_at": None, "pin": None, "code": "壞 代碼"})
+    assert res.status_code == 422
+
+
+def test_list_links_sorting(client: TestClient):
+    create_link(client, "https://example.com/sort-a", code="SRT01")
+    create_link(client, "https://example.com/sort-b", code="SRT02")
+
+    res = client.get("/api/links?sort=code&order=asc&query=SRT")
+    assert res.status_code == 200
+    codes = [item["code"] for item in res.json()["items"]]
+    assert codes == sorted(codes)
+
+    res = client.get("/api/links?sort=click_count&order=desc")
+    assert res.status_code == 200
+
+
 def test_public_check_endpoint(client: TestClient):
     create_link(client, "https://example.com/checkme", code="CHK01")
 
@@ -258,7 +285,7 @@ def test_patch_original_url_conflict_with_active_link(client: TestClient):
 
     res = client.patch("/api/links/E124", json={"original_url": "https://example.com/taken"})
     assert res.status_code == 409
-    assert res.json()["detail"].startswith("A short link already exists for this URL:")
+    assert res.json()["detail"].startswith("此網址已建立過短網址：")
 
 
 def test_patch_expiry_only_keeps_url(client: TestClient):
