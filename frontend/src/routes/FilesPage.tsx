@@ -244,12 +244,14 @@ export function FilesPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState('');
   const [customPin, setCustomPin] = useState('');
+  const [customCode, setCustomCode] = useState('');
   const [expiryPreset, setExpiryPreset] = useState<ExpiryPreset>('7');
   const [customExpiry, setCustomExpiry] = useState<Date | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploads, setUploads] = useState<UploadState[]>([]);
 
   const [query, setQuery] = useState('');
+  const [queryInput, setQueryInput] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [items, setItems] = useState<FileShare[]>([]);
   const [total, setTotal] = useState(0);
@@ -283,6 +285,18 @@ export function FilesPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, status, query]);
+
+  // 停止輸入 350ms 才送出搜尋，避免逐鍵打 API。
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (queryInput.trim() !== query) {
+        setPage(1);
+        setQuery(queryInput.trim());
+      }
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryInput]);
 
   const oversized = files.filter((f) => f.size > MAX_FILE_MB * 1024 * 1024);
   const fileError = oversized.length
@@ -344,6 +358,7 @@ export function FilesPage() {
         note: note.trim() || null,
         expires_at: resolveExpiry(),
         pin: customPin ? customPin.toUpperCase() : null,
+        code: customCode.trim() || null,
       });
 
       const uploaded = await uploadInto(created.code, files);
@@ -357,6 +372,7 @@ export function FilesPage() {
         setFiles([]);
         setNote('');
         setCustomPin('');
+        setCustomCode('');
         openShareResult({
           title:
             uploaded.length === files.length
@@ -631,6 +647,17 @@ export function FilesPage() {
               radius="md"
             />
             <TextInput
+              label="自訂代碼（選填）"
+              placeholder="留空則自動產生"
+              value={customCode}
+              onChange={(e) => setCustomCode(e.currentTarget.value.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32))}
+              maxLength={32}
+              size="md"
+              radius="md"
+              description="分享網址會是 url.taipei/f/代碼；限英數字、底線與連字號"
+              styles={{ input: { fontFamily: 'monospace' } }}
+            />
+            <TextInput
               label="自訂 PIN 碼（選填）"
               placeholder="留空則自動產生"
               value={customPin}
@@ -671,12 +698,9 @@ export function FilesPage() {
           <Group align="flex-end" grow>
             <TextInput
               label="搜尋"
-              placeholder="代碼、檔名或備註"
-              value={query}
-              onChange={(e) => {
-                setPage(1);
-                setQuery(e.currentTarget.value);
-              }}
+              placeholder="代碼、檔名或備註（自動搜尋）"
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.currentTarget.value)}
               size="md"
               radius="md"
             />
@@ -699,6 +723,7 @@ export function FilesPage() {
             />
           </Group>
 
+          <Table.ScrollContainer minWidth={1080}>
           <Table highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
@@ -896,9 +921,9 @@ export function FilesPage() {
                                   </Tooltip>
                                 </>
                               )}
-                              <Tooltip label="永久刪除全部檔案" withArrow>
+                              <Tooltip label="永久刪除全部檔案（無法復原）" withArrow>
                                 <ActionIcon
-                                  variant="subtle"
+                                  variant="light"
                                   color="red"
                                   aria-label="永久刪除全部檔案"
                                   onClick={() => confirmDelete(share)}
@@ -988,6 +1013,7 @@ export function FilesPage() {
               )}
             </Table.Tbody>
           </Table>
+          </Table.ScrollContainer>
 
           <Group justify="space-between" mt="md" align="center">
             <Text size="sm" c="dimmed" fw={500}>

@@ -191,6 +191,8 @@ export const api = {
     query?: string;
     tag_id?: number;
     status?: 'active' | 'disabled' | 'expired' | 'all';
+    sort?: 'created_at' | 'click_count' | 'expires_at' | 'code';
+    order?: 'asc' | 'desc';
     limit?: number;
     offset?: number;
   }) => {
@@ -198,6 +200,8 @@ export const api = {
     if (params.query) sp.set('query', params.query);
     if (params.tag_id) sp.set('tag_id', String(params.tag_id));
     if (params.status) sp.set('status', params.status);
+    if (params.sort) sp.set('sort', params.sort);
+    if (params.order) sp.set('order', params.order);
     if (params.limit) sp.set('limit', String(params.limit));
     if (params.offset) sp.set('offset', String(params.offset));
     const qs = sp.toString();
@@ -260,7 +264,7 @@ export const api = {
 
   // PIN-protected file sharing. A share is one link and one PIN holding any
   // number of files; each file is uploaded in its own request.
-  createShare: (payload: { note?: string | null; expires_at?: string | null; pin?: string | null }) =>
+  createShare: (payload: { note?: string | null; expires_at?: string | null; pin?: string | null; code?: string | null }) =>
     apiFetch<FileShareCreated>('/api/shares', { method: 'POST', body: JSON.stringify(payload) }),
   listShares: (params: {
     query?: string;

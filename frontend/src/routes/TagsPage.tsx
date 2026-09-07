@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
@@ -196,17 +197,19 @@ export function TagsPage() {
                     </Badge>
                   </Table.Td>
                   <Table.Td>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDelete(tag)}
-                      disabled={!tag.is_active}
-                      aria-label="刪除"
-                      size="md"
-                      radius="md"
-                    >
-                      <IconTrash size={18} />
-                    </ActionIcon>
+                    <Tooltip label={tag.is_active ? '刪除標籤' : '此標籤已停用'} withArrow>
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        onClick={() => handleDelete(tag)}
+                        disabled={!tag.is_active}
+                        aria-label={`刪除標籤 ${tag.name}`}
+                        size="md"
+                        radius="md"
+                      >
+                        <IconTrash size={18} />
+                      </ActionIcon>
+                    </Tooltip>
                   </Table.Td>
                 </Table.Tr>
               ))

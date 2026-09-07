@@ -79,8 +79,8 @@ export function CreatePage() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : '建立失敗';
 
-      if (msg.startsWith('A short link already exists for this URL:')) {
-        const existingUrl = msg.replace('A short link already exists for this URL:', '').trim();
+      if (msg.startsWith('此網址已建立過短網址：')) {
+        const existingUrl = msg.replace('此網址已建立過短網址：', '').trim();
         modals.open({
           title: '短網址已存在',
           children: (

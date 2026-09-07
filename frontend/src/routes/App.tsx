@@ -1,4 +1,5 @@
-import { AppShell, Button, Container, Group, Text, Title } from '@mantine/core';
+import { AppShell, Burger, Button, Container, Drawer, Group, Stack, Text, Title } from '@mantine/core';
+import { useState } from 'react';
 import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -17,6 +18,7 @@ import { TagsPage } from './TagsPage';
 export function App() {
   const location = useLocation();
   const { user, loading, signOut } = useAuth();
+  const [navOpened, setNavOpened] = useState(false);
 
   // QR 產生器與民眾查核頁是公開頁面，不需要登入，也不等待登入狀態載入。
   // 根路徑只在對外網域（url.taipei，經後端代理）當服務聲明頁；
@@ -69,7 +71,7 @@ export function App() {
             >
               臺北市短網址服務
             </Title>
-            <Group gap="xs" align="center" wrap="nowrap">
+            <Group gap="xs" align="center" wrap="nowrap" visibleFrom="lg">
               {user && navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
@@ -119,9 +121,63 @@ export function App() {
                 </Button>
               )}
             </Group>
+            {user && (
+              <Burger
+                opened={navOpened}
+                onClick={() => setNavOpened((o) => !o)}
+                hiddenFrom="lg"
+                size="sm"
+                aria-label="開啟功能選單"
+              />
+            )}
           </Group>
         </Container>
       </AppShell.Header>
+      {user && (
+        <Drawer
+          opened={navOpened}
+          onClose={() => setNavOpened(false)}
+          title="功能選單"
+          padding="md"
+          size="xs"
+          hiddenFrom="lg"
+        >
+          <Stack gap="xs">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.path}
+                  component={Link}
+                  to={item.path}
+                  leftSection={<Icon size={18} />}
+                  variant={location.pathname === item.path ? 'light' : 'subtle'}
+                  justify="flex-start"
+                  fullWidth
+                  radius="md"
+                  onClick={() => setNavOpened(false)}
+                >
+                  {item.label}
+                </Button>
+              );
+            })}
+            <Button
+              variant="subtle"
+              color="gray"
+              leftSection={<IconLogout size={18} />}
+              justify="flex-start"
+              fullWidth
+              radius="md"
+              onClick={() => {
+                setNavOpened(false);
+                signOut();
+              }}
+            >
+              登出
+            </Button>
+          </Stack>
+        </Drawer>
+      )}
       <AppShell.Main>
         <Container size="lg" py="xl">
           {isPublicPage ? (

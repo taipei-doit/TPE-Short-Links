@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Alert,
   Button,
   Card,
   Group,
@@ -8,13 +9,16 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import type { Admin } from '../api/types';
 
 function isValidEmail(value: string): boolean {
@@ -72,6 +76,8 @@ function EditAdminForm({
 }
 
 export function AdminsPage() {
+  const { user } = useAuth();
+  const myEmail = (user?.email ?? '').toLowerCase();
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -150,18 +156,26 @@ export function AdminsPage() {
   }
 
   function confirmRemove(admin: Admin) {
+    const isSelf = admin.email.toLowerCase() === myEmail;
     modals.openConfirmModal({
-      title: '移除管理員？',
+      title: isSelf ? '移除你自己的帳號？' : '移除管理員？',
       children: (
-        <Text size="sm">
-          將移除{' '}
-          <Text span fw={600}>
-            {admin.name ? `${admin.name}（${admin.email}）` : admin.email}
+        <Stack gap="sm">
+          {isSelf && (
+            <Alert color="red" icon={<IconAlertTriangle size={18} />}>
+              這是你目前登入的帳號！移除後你將立即失去管理權限，必須請其他管理員重新加入你。
+            </Alert>
+          )}
+          <Text size="sm">
+            將移除{' '}
+            <Text span fw={600}>
+              {admin.name ? `${admin.name}（${admin.email}）` : admin.email}
+            </Text>
+            ，該帳號將無法再登入管理介面。
           </Text>
-          ，該帳號將無法再登入管理介面。
-        </Text>
+        </Stack>
       ),
-      labels: { confirm: '移除', cancel: '取消' },
+      labels: { confirm: isSelf ? '我確定要移除自己' : '移除', cancel: '取消' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {
@@ -307,26 +321,33 @@ export function AdminsPage() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs" wrap="nowrap">
-                      <ActionIcon
-                        variant="subtle"
-                        color="blue"
-                        onClick={() => openEditModal(a)}
-                        aria-label="編輯管理員資料"
-                        size="md"
-                        radius="md"
+                      <Tooltip label="編輯姓名與職稱" withArrow>
+                        <ActionIcon
+                          variant="subtle"
+                          color="blue"
+                          onClick={() => openEditModal(a)}
+                          aria-label={`編輯 ${a.email} 的資料`}
+                          size="md"
+                          radius="md"
+                        >
+                          <IconPencil size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip
+                        label={a.email.toLowerCase() === myEmail ? '移除（這是你自己）' : '移除管理員'}
+                        withArrow
                       >
-                        <IconPencil size={18} />
-                      </ActionIcon>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        onClick={() => confirmRemove(a)}
-                        aria-label="移除管理員"
-                        size="md"
-                        radius="md"
-                      >
-                        <IconTrash size={18} />
-                      </ActionIcon>
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          onClick={() => confirmRemove(a)}
+                          aria-label={`移除管理員 ${a.email}`}
+                          size="md"
+                          radius="md"
+                        >
+                          <IconTrash size={18} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Group>
                   </Table.Td>
                 </Table.Tr>

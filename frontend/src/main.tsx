@@ -3,7 +3,7 @@ import '@mantine/notifications/styles.css';
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { MantineProvider } from '@mantine/core';
+import { MantineProvider, type CSSVariablesResolver } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
 import { Notifications } from '@mantine/notifications';
 import { ModalsProvider } from '@mantine/modals';
@@ -22,10 +22,18 @@ if (rawHosts.includes(window.location.hostname)) {
   );
 }
 
+// dimmed 預設 (#868e96) 壓在灰底上貼著 WCAG 4.5:1 及格線，整體加深一階。
+const cssVariablesResolver: CSSVariablesResolver = () => ({
+  variables: {},
+  light: { '--mantine-color-dimmed': 'var(--mantine-color-gray-7)' },
+  dark: {},
+});
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <MantineProvider
       defaultColorScheme="light"
+      cssVariablesResolver={cssVariablesResolver}
       theme={{
         primaryColor: 'blue',
         defaultRadius: 'md',

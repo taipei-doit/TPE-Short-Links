@@ -9,7 +9,9 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
+import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
@@ -63,15 +65,31 @@ export function BlockedWordsPage() {
     }
   }
 
-  async function handleDelete(word: string) {
-    try {
-      await api.deleteBlockedWord(word);
-      notifications.show({ color: 'green', message: '字詞已移除' });
-      load();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : '刪除失敗';
-      notifications.show({ color: 'red', message: msg });
-    }
+  function handleDelete(word: string) {
+    modals.openConfirmModal({
+      title: '移除封鎖字詞？',
+      children: (
+        <Text size="sm">
+          將移除{' '}
+          <Text span fw={600} style={{ fontFamily: 'monospace' }}>
+            {word}
+          </Text>
+          ，之後自動產生的代碼將不再避開這個字詞。
+        </Text>
+      ),
+      labels: { confirm: '移除', cancel: '取消' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await api.deleteBlockedWord(word);
+          notifications.show({ color: 'green', message: '字詞已移除' });
+          load();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : '刪除失敗';
+          notifications.show({ color: 'red', message: msg });
+        }
+      },
+    });
   }
 
   return (
@@ -184,16 +202,18 @@ export function BlockedWordsPage() {
                       </Badge>
                     </Table.Td>
                     <Table.Td>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        onClick={() => handleDelete(word)}
-                        aria-label="刪除"
-                        size="md"
-                        radius="md"
-                      >
-                        <IconTrash size={18} />
-                      </ActionIcon>
+                      <Tooltip label="移除字詞" withArrow>
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          onClick={() => handleDelete(word)}
+                          aria-label={`移除封鎖字詞 ${word}`}
+                          size="md"
+                          radius="md"
+                        >
+                          <IconTrash size={18} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Table.Td>
                   </Table.Tr>
                 );
