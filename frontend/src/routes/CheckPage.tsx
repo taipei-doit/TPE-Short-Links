@@ -260,7 +260,7 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
             {preview.image && (
               <img
                 src={preview.image}
-                alt=""
+                alt={preview.title ? `目標網站「${preview.title}」的代表圖片` : '目標網站的代表圖片'}
                 style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }}
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
