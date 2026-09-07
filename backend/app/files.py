@@ -177,6 +177,17 @@ def read_upload_token(token: str) -> dict | None:
         return None
     if not isinstance(payload, dict) or payload.get("exp", 0) < int(time.time()):
         return None
+    # 路徑欄位是伺服器簽發的，但仍在使用前驗證形狀：相對路徑、無反斜線、
+    # 無 ".." 片段，storage 層才拿得到乾淨的 key。
+    path = payload.get("path")
+    if (
+        not isinstance(path, str)
+        or not path
+        or path.startswith("/")
+        or "\\" in path
+        or ".." in path.split("/")
+    ):
+        return None
     return payload
 
 

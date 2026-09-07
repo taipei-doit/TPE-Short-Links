@@ -45,7 +45,7 @@ def test_delete_admin(client: TestClient, db_session: Session):
     seed(db_session, "keep@gov.taipei")
     seed(db_session, "remove@gov.taipei")
 
-    res = client.delete("/api/admins/remove@gov.taipei")
+    res = client.request("DELETE", "/api/admins", json={"email": "remove@gov.taipei"})
     assert res.status_code == 200
 
     remaining = [a["email"] for a in client.get("/api/admins").json()]
@@ -55,7 +55,7 @@ def test_delete_admin(client: TestClient, db_session: Session):
 def test_cannot_delete_last_admin(client: TestClient, db_session: Session):
     seed(db_session, "only@gov.taipei")
 
-    res = client.delete("/api/admins/only@gov.taipei")
+    res = client.request("DELETE", "/api/admins", json={"email": "only@gov.taipei"})
     assert res.status_code == 422
     assert "last admin" in res.json()["detail"]
 
@@ -63,7 +63,7 @@ def test_cannot_delete_last_admin(client: TestClient, db_session: Session):
 def test_delete_unknown_admin_is_404(client: TestClient, db_session: Session):
     seed(db_session, "someone@gov.taipei")
 
-    res = client.delete("/api/admins/ghost@gov.taipei")
+    res = client.request("DELETE", "/api/admins", json={"email": "ghost@gov.taipei"})
     assert res.status_code == 404
 
 

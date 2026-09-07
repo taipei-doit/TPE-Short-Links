@@ -34,6 +34,7 @@ from app.models import AdminUser, BlockedWord, FileShare, ReservedCode, ShortLin
 from app.pages import NOT_FOUND_HTML, redirect_to_not_found
 from app.pins import verify_pin
 from app.schemas import (
+    AdminDeleteIn,
     AdminIn,
     AdminOut,
     DisableOut,
@@ -71,6 +72,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    # url.taipei 只走 HTTPS（Cloud Run 終端），這裡補上瀏覽器端的安全宣告：
+    # HSTS 鎖 HTTPS、nosniff 防 MIME 混淆、frame 兩式並用防點擊劫持。
+    response = await call_next(request)
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
 
 # PIN-protected file sharing: /api/files/* for admins, /f/{code} for the public.
 # Registered here so its routes are matched before the catch-all /{code}.
@@ -875,14 +889,17 @@ def upsert_admin(
     return AdminOut(email=email, name=name, title=title)
 
 
-@app.delete("/api/admins/{email}")
+@app.delete("/api/admins")
 def delete_admin(
-    email: str = Path(..., min_length=3, max_length=320),
+    payload: AdminDeleteIn,
     db: Session = Depends(get_db),
     _auth: dict = Depends(get_firebase_user),
 ) -> dict[str, str]:
-    """Remove an admin. Refuses to remove yourself or the last remaining admin."""
-    target = email.strip().lower()
+    """Remove an admin. Refuses to remove yourself or the last remaining admin.
+
+    Email 由 request body 帶入而非 URL 路徑，個資不落入存取紀錄。
+    """
+    target = payload.email.strip().lower()
     caller = str(_auth.get("email") or "").strip().lower()
 
     admin_user = db.get(AdminUser, target)
@@ -1074,7 +1091,8 @@ def root() -> Response:
 # the hashed /assets bundles the page references are proxied (and cached) too.
 # All QR generation still happens client-side. Declared before /{code}; the
 # codes "qr" and "assets" are reserved (see Settings).
-_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+# 開頭必須是英數（擋掉 "."、".." 與隱藏檔形式），其餘限白名單字元。
+_ASSET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _STUDIO_INDEX_TTL_SECONDS = 60.0
 _studio_index_cache: dict[str, tuple[float, bytes]] = {}
 _frontend_asset_cache: dict[str, tuple[bytes, str, bytes | None]] = {}
@@ -1205,7 +1223,7 @@ _COMPRESSIBLE_PREFIXES = ("text/", "application/javascript", "application/json",
 
 @app.get("/assets/{filename}")
 def frontend_asset(request: Request, filename: str = Path(..., min_length=1, max_length=128)) -> Response:
-    if not _ASSET_NAME_RE.match(filename):
+    if not _ASSET_NAME_RE.match(filename) or ".." in filename:
         raise HTTPException(status_code=404, detail="Not found")
     hit = _frontend_asset_cache.get(filename)
     if hit is None:
@@ -1257,6 +1275,11 @@ def redirect(
 
     expires_at = as_utc(link.expires_at)
     if expires_at is not None and expires_at <= now_utc():
+        return redirect_to_not_found()
+
+    # 縱深防禦：目的網址建立時已驗證過，但轉址前再確認一次只放行 http(s)，
+    # 資料庫內容即使被繞道竄改也絕不轉向 javascript:/data: 之類的 URL。
+    if not str(link.original_url).lower().startswith(("http://", "https://")):
         return redirect_to_not_found()
 
     # Increment click count (only count successful redirects for active, non-expired links)

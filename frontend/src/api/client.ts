@@ -367,9 +367,11 @@ export const api = {
   /** Create an admin, or update an existing one's name/title. */
   saveAdmin: (adminUser: Admin) =>
     apiFetch<Admin>('/api/admins', { method: 'POST', body: JSON.stringify(adminUser) }),
+  // Email 放 body 不放 URL：路徑會進伺服器存取紀錄，個資不該跟著進去。
   removeAdmin: (email: string) =>
-    apiFetch<{ message: string; email: string }>(`/api/admins/${encodeURIComponent(email)}`, {
+    apiFetch<{ message: string; email: string }>('/api/admins', {
       method: 'DELETE',
+      body: JSON.stringify({ email }),
     }),
 };
 

@@ -61,9 +61,10 @@ class LocalStorage:
 
     def _full(self, path: str) -> Path:
         # Resolve and confine: a crafted path must not escape the root.
+        # 用 parents 比對而非字串前綴，"/data-evil" 才不會冒充 "/data" 底下。
         full = (self.root / path).resolve()
         root = self.root.resolve()
-        if not str(full).startswith(str(root)):
+        if full != root and root not in full.parents:
             raise ValueError("Invalid storage path")
         return full
 

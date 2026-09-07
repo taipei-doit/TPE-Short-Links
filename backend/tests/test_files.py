@@ -190,9 +190,9 @@ def test_custom_pin_is_accepted_and_validated(files_client):
 
 def test_filename_is_sanitized(files_client):
     code = create_share(files_client).json()["code"]
-    r = add_file(files_client, code, name="../../etc/passwd")
+    r = add_file(files_client, code, name="../../etc/hosts")
     assert r.status_code == 200
-    assert r.json()["filename"] == "passwd"
+    assert r.json()["filename"] == "hosts"
 
 
 # --------------------------------------------------------------------------

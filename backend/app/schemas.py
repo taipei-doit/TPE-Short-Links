@@ -17,6 +17,11 @@ class AdminIn(BaseModel):
     title: str = Field(default="", max_length=100)
 
 
+class AdminDeleteIn(BaseModel):
+    # Email 走 request body 而不是路徑，避免個資落入存取紀錄（access log）。
+    email: EmailStr
+
+
 class WhitelistCheckIn(BaseModel):
     email: EmailStr
 
