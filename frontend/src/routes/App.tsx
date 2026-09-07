@@ -1,5 +1,5 @@
 import { AppShell, Burger, Button, Container, Drawer, Group, Stack, Text } from '@mantine/core';
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -21,10 +21,31 @@ const TagsPage = lazy(() => import('./TagsPage').then((m) => ({ default: m.TagsP
 
 const routeFallback = <div style={{ padding: '2rem', textAlign: 'center' }}>載入中…</div>;
 
+/** 各頁專屬的 <title>：無障礙檢核要求每頁標題須描述該頁主題。 */
+const PAGE_TITLES: Array<[prefix: string, name: string]> = [
+  ['/check', '短網址查核'],
+  ['/accessibility', '無障礙聲明'],
+  ['/qr', 'QR Code 產生器'],
+  ['/create', '建立短網址'],
+  ['/manage', '管理短網址'],
+  ['/files', '檔案分享'],
+  ['/tags', '標籤管理'],
+  ['/blocked-words', '封鎖字詞管理'],
+  ['/admins', '管理員'],
+  ['/login', '管理員登入'],
+];
+
 export function App() {
   const location = useLocation();
   const { user, loading, signOut } = useAuth();
   const [navOpened, setNavOpened] = useState(false);
+
+  useEffect(() => {
+    const hit = PAGE_TITLES.find(
+      ([p]) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+    );
+    document.title = hit ? `${hit[1]}｜臺北市短網址服務` : '臺北市短網址服務';
+  }, [location.pathname]);
 
   // 這些路由「免登入」（查核與聲明頁對民眾公開；QR 產生器則憑 PIN 供機關使用），
   // 不等待登入狀態載入。根路徑只在對外網域（url.taipei，經後端代理）當服務聲明頁；
