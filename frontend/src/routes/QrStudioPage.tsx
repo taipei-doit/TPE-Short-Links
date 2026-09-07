@@ -378,7 +378,11 @@ function StudioEditor({ target, mark }: { target: string; mark: LogoMark }) {
           <Group align="flex-start" gap="xl" wrap="wrap">
             <div style={{ width: 280, flex: 'none' }}>
               {previewHtml ? (
-                <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                <div
+                  role="img"
+                  aria-label={`${targetUrl} 的 QR Code 即時預覽`}
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
               ) : (
                 <Text size="sm" c="dimmed">
                   無法產生預覽
