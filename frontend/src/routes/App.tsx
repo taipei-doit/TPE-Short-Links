@@ -138,31 +138,52 @@ export function App() {
                 pb="md"
                 style={{ borderTop: '1px solid var(--mantine-color-gray-3)', maxWidth: 720, margin: '64px auto 0' }}
               >
-                <Text size="xs" c="dimmed">
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  component="a"
+                  href="https://doit.gov.taipei"
+                  target="_blank"
+                  rel="noopener"
+                  style={{ textDecoration: 'none' }}
+                >
                   © 臺北市政府資訊局
                 </Text>
-                {isPublicHost && (
-                  <Group gap="lg">
-                    <Text
-                      size="xs"
-                      c="dimmed"
-                      component={Link}
-                      to="/"
-                      style={{ textDecoration: 'none' }}
-                    >
-                      服務聲明與隱私權宣告
-                    </Text>
-                    <Text
-                      size="xs"
-                      c="dimmed"
-                      component={Link}
-                      to="/check"
-                      style={{ textDecoration: 'none' }}
-                    >
-                      短網址查核
-                    </Text>
-                  </Group>
-                )}
+                <Group gap="lg">
+                  {isPublicHost && (
+                    <>
+                      <Text
+                        size="xs"
+                        c="dimmed"
+                        component={Link}
+                        to="/"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        服務聲明與隱私權宣告
+                      </Text>
+                      <Text
+                        size="xs"
+                        c="dimmed"
+                        component={Link}
+                        to="/check"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        短網址查核
+                      </Text>
+                    </>
+                  )}
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    component="a"
+                    href="https://www.gov.taipei"
+                    target="_blank"
+                    rel="noopener"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    臺北市政府全球資訊網
+                  </Text>
+                </Group>
               </Group>
             </>
           ) : loading ? (
