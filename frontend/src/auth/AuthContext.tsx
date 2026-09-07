@@ -1,13 +1,6 @@
-import {
-  isSignInWithEmailLink,
-  signInWithEmailLink,
-  signOut as firebaseSignOut,
-  type User,
-} from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-import { auth } from '../firebase';
 
 const EMAIL_FOR_SIGN_IN_KEY = 'emailForSignIn';
 
@@ -26,63 +19,68 @@ export function useAuth() {
   return ctx;
 }
 
+/**
+ * Firebase 一律動態載入：公開頁（聲明、查核、QR）首屏不必下載與解析
+ * 驗證 SDK，登入狀態在 SDK 就緒後才補上。對外 API 與原版完全相同。
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Complete sign-in when user lands on the app via the magic link
   useEffect(() => {
-    if (!auth || !window.location.href) {
-      setLoading(false);
-      return;
-    }
-    const handleEmailLink = async () => {
-      if (!isSignInWithEmailLink(auth, window.location.href)) {
-        setLoading(false);
-        return;
-      }
-      let email = window.localStorage.getItem(EMAIL_FOR_SIGN_IN_KEY);
-      if (!email) {
-        email = window.prompt('Please confirm your email address') ?? '';
+    let alive = true;
+    let unsub: (() => void) | undefined;
+
+    (async () => {
+      const [{ auth }, fb] = await Promise.all([import('../firebase'), import('firebase/auth')]);
+      if (!alive) return;
+
+      // 魔術連結著陸：先完成登入再掛狀態監聽
+      if (fb.isSignInWithEmailLink(auth, window.location.href)) {
+        let email = window.localStorage.getItem(EMAIL_FOR_SIGN_IN_KEY);
         if (!email) {
-          setLoading(false);
-          return;
+          email = window.prompt('請輸入您申請登入連結時使用的電子郵件') ?? '';
+        }
+        if (email) {
+          try {
+            await fb.signInWithEmailLink(auth, email, window.location.href);
+            window.localStorage.removeItem(EMAIL_FOR_SIGN_IN_KEY);
+            // 清掉網址上的一次性參數，重新整理才不會重跑登入
+            window.history.replaceState({}, document.title, window.location.pathname || '/');
+          } catch (err) {
+            console.error('Sign-in from link failed:', err);
+          }
         }
       }
-      try {
-        await signInWithEmailLink(auth, email, window.location.href);
-        window.localStorage.removeItem(EMAIL_FOR_SIGN_IN_KEY);
-        // Remove the link params from URL so refreshing doesn't re-trigger
-        window.history.replaceState({}, document.title, window.location.pathname || '/');
-      } catch (err) {
-        console.error('Sign-in from link failed:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    handleEmailLink();
-  }, []);
 
-  // Auth state listener (after initial link handling)
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return () => unsub();
+      unsub = auth.onAuthStateChanged((u) => {
+        if (!alive) return;
+        setUser(u);
+        setLoading(false);
+      });
+    })();
+
+    return () => {
+      alive = false;
+      unsub?.();
+    };
   }, []);
 
   const requestLoginLink = useCallback(async (email: string) => {
-    const { getFunctions, httpsCallable } = await import('firebase/functions');
-    const fn = getFunctions(auth.app);
+    const [{ default: app }, { getFunctions, httpsCallable }] = await Promise.all([
+      import('../firebase'),
+      import('firebase/functions'),
+    ]);
+    const fn = getFunctions(app);
     const sendAdminLoginLink = httpsCallable<{ email: string }>(fn, 'sendAdminLoginLink');
     window.localStorage.setItem(EMAIL_FOR_SIGN_IN_KEY, email);
     await sendAdminLoginLink({ email });
   }, []);
 
   const signOut = useCallback(async () => {
-    await firebaseSignOut(auth);
+    const [{ auth }, fb] = await Promise.all([import('../firebase'), import('firebase/auth')]);
+    await fb.signOut(auth);
     navigate('/login');
   }, [navigate]);
 

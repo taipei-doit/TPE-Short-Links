@@ -1,20 +1,25 @@
 import { AppShell, Burger, Button, Container, Drawer, Group, Stack, Text, Title } from '@mantine/core';
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
-import { AdminsPage } from './AdminsPage';
-import { BlockedWordsPage } from './BlockedWordsPage';
+// 公開頁（聲明、查核、無障礙）要最快畫出來，維持同步載入；
+// 管理端與 QR 產生器按需載入，公開頁首屏不必下載整個後台。
 import { AccessibilityPage } from './AccessibilityPage';
 import { CheckPage } from './CheckPage';
 import { LandingPage } from './LandingPage';
-import { CreatePage } from './CreatePage';
-import { FilesPage } from './FilesPage';
-import { LoginPage } from './LoginPage';
-import { ManagePage } from './ManagePage';
-import { QrStudioPage } from './QrStudioPage';
-import { TagsPage } from './TagsPage';
+
+const AdminsPage = lazy(() => import('./AdminsPage').then((m) => ({ default: m.AdminsPage })));
+const BlockedWordsPage = lazy(() => import('./BlockedWordsPage').then((m) => ({ default: m.BlockedWordsPage })));
+const CreatePage = lazy(() => import('./CreatePage').then((m) => ({ default: m.CreatePage })));
+const FilesPage = lazy(() => import('./FilesPage').then((m) => ({ default: m.FilesPage })));
+const LoginPage = lazy(() => import('./LoginPage').then((m) => ({ default: m.LoginPage })));
+const ManagePage = lazy(() => import('./ManagePage').then((m) => ({ default: m.ManagePage })));
+const QrStudioPage = lazy(() => import('./QrStudioPage').then((m) => ({ default: m.QrStudioPage })));
+const TagsPage = lazy(() => import('./TagsPage').then((m) => ({ default: m.TagsPage })));
+
+const routeFallback = <div style={{ padding: '2rem', textAlign: 'center' }}>載入中…</div>;
 
 export function App() {
   const location = useLocation();
@@ -200,6 +205,7 @@ export function App() {
           :::
         </a>
         <Container size="lg" py="xl" id="main-block">
+          <Suspense fallback={routeFallback}>
           {isPublicPage ? (
             <>
               <Routes>
@@ -301,6 +307,7 @@ export function App() {
               <Route path="*" element={<Navigate to="/create" replace />} />
             </Routes>
           )}
+          </Suspense>
         </Container>
       </AppShell.Main>
     </AppShell>

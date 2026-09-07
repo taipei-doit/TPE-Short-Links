@@ -10,19 +10,22 @@ import type {
   UploadSession,
   Tag,
 } from './types';
-import { auth } from '../firebase';
-
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000';
+
+/** Firebase 動態載入：公開頁面的首屏不必扛整包驗證 SDK。 */
+async function getAuthHeader(): Promise<Record<string, string>> {
+  const { auth } = await import('../firebase');
+  if (!auth.currentUser) return {};
+  const token = await auth.currentUser.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
+    ...(await getAuthHeader()),
     ...((init?.headers as Record<string, string>) ?? {}),
   };
-  if (auth.currentUser) {
-    const token = await auth.currentUser.getIdToken();
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
@@ -57,11 +60,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
  * get a 401. Fetch the bytes with the header, then save them from memory.
  */
 async function downloadFile(path: string, filename: string): Promise<void> {
-  const headers: Record<string, string> = {};
-  if (auth.currentUser) {
-    const token = await auth.currentUser.getIdToken();
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  const headers = await getAuthHeader();
   const res = await fetch(`${API_BASE_URL}${path}`, { headers });
 
   if (!res.ok) {
@@ -109,12 +108,12 @@ async function uploadWithProgress<T>(
   form: FormData,
   onProgress?: (percent: number) => void,
 ): Promise<T> {
-  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const authHeader = await getAuthHeader();
 
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE_URL}${path}`);
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    if (authHeader.Authorization) xhr.setRequestHeader('Authorization', authHeader.Authorization);
 
     xhr.upload.onprogress = (event) => {
       if (onProgress && event.lengthComputable) {
