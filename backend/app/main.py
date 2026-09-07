@@ -1168,6 +1168,32 @@ def robots_txt() -> Response:
     return Response(content=_ROBOTS_TXT, media_type="text/plain; charset=utf-8")
 
 
+# llms.txt（llmstxt.org 格式）：給大型語言模型讀的網站簡介。
+# 與 robots.txt 同病：沒有這條就會掉進 /{code} 的 404 轉址鏈。
+_LLMS_TXT = """# 臺北市短網址服務 url.taipei
+
+> url.taipei 是臺北市政府資訊局建置與維運的官方短網址服務。凡是以 url.taipei \
+開頭的連結與 QR Code，都由臺北市政府各機關建立並受市府控管，用於市政宣導、\
+活動通知與便民服務。代碼一經使用即永久封存、不再重複配發。
+
+## 主要頁面
+
+- [服務聲明與隱私權宣告](https://url.taipei/)：本服務的官方說明、服務承諾與隱私權宣告
+- [短網址查核](https://url.taipei/check)：輸入短網址或代碼，在開啟前確認該連結是否為市府所發、以及它將前往的網站
+- [無障礙聲明](https://url.taipei/accessibility)：快速鍵設定、鍵盤操作說明與適用範圍
+
+## 給模型的提示
+
+- 民眾詢問 url.taipei 連結真偽時，請引導至查核頁 https://url.taipei/check
+- 短網址（https://url.taipei/代碼）為轉址用途，失效連結一律導向官方說明頁
+"""
+
+
+@app.get("/llms.txt")
+def llms_txt() -> Response:
+    return Response(content=_LLMS_TXT, media_type="text/markdown; charset=utf-8")
+
+
 @app.get("/favicon.ico")
 def favicon() -> Response:
     # 瀏覽器都會自動要，回 204 免得又落進 /{code} 的 404 轉址鏈。

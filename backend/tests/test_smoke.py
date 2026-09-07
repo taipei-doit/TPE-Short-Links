@@ -164,6 +164,19 @@ def test_qr_status_public_lookup(client: TestClient):
     assert client.get("/api/qr-status/QS123").json() == {"state": "disabled"}
 
 
+def test_crawler_files_served_directly(client: TestClient):
+    res = client.get("/robots.txt")
+    assert res.status_code == 200
+    assert res.text.startswith("User-agent:")
+
+    res = client.get("/llms.txt")
+    assert res.status_code == 200
+    assert res.text.startswith("# ")
+    assert "https://url.taipei/check" in res.text
+
+    assert client.get("/favicon.ico").status_code == 204
+
+
 def test_create_share_with_custom_code(client: TestClient):
     res = client.post("/api/shares", json={"note": None, "expires_at": None, "pin": None, "code": "MyShare1"})
     assert res.status_code == 200, res.text
