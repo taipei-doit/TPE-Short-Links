@@ -103,8 +103,8 @@ export function AccessibilityPage() {
             一、
           </Text>
           <Text size="sm" c="dark.6" style={{ lineHeight: 1.9 }}>
-            本聲明適用於 url.taipei 之公開頁面（服務首頁、短網址查核、QR Code
-            產生器與本頁）。機關內部管理介面僅供市府人員使用，不在適用範圍。
+            本聲明適用於 url.taipei 之公開頁面（服務首頁、短網址查核與本頁）。QR Code
+            產生器僅供市府機關人員憑 PIN 碼使用、機關內部管理介面僅供市府人員登入使用，均不屬公開頁面範圍。
           </Text>
         </Group>
         <Group align="flex-start" gap="sm" wrap="nowrap">

@@ -26,8 +26,8 @@ export function App() {
   const { user, loading, signOut } = useAuth();
   const [navOpened, setNavOpened] = useState(false);
 
-  // QR 產生器與民眾查核頁是公開頁面，不需要登入，也不等待登入狀態載入。
-  // 根路徑只在對外網域（url.taipei，經後端代理）當服務聲明頁；
+  // 這些路由「免登入」（查核與聲明頁對民眾公開；QR 產生器則憑 PIN 供機關使用），
+  // 不等待登入狀態載入。根路徑只在對外網域（url.taipei，經後端代理）當服務聲明頁；
   // 管理網域的根路徑仍走登入導向。
   const isPublicHost = window.location.hostname === 'url.taipei';
   const isLanding = location.pathname === '/' && isPublicHost;
