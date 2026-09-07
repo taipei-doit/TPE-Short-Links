@@ -46,7 +46,14 @@
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- 靜態後備內容：JS 尚未執行（或被停用）時，螢幕報讀軟體與
+           檢測工具仍能辨識網頁結構；React 掛載後會整個換掉。 -->
+      <main>
+        <h1>臺北市短網址服務</h1>
+        <p>url.taipei 是臺北市政府的官方短網址服務。本網站需要啟用 JavaScript 才能操作完整功能。</p>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

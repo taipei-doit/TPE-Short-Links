@@ -1,4 +1,4 @@
-import { AppShell, Burger, Button, Container, Drawer, Group, Stack, Text, Title } from '@mantine/core';
+import { AppShell, Burger, Button, Container, Drawer, Group, Stack, Text } from '@mantine/core';
 import { Suspense, lazy, useState } from 'react';
 import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -73,11 +73,14 @@ export function App() {
         </a>
         <Container h="100%" size="lg" id="header-block">
           <Group h="100%" justify="space-between" align="center" gap="xl">
-            <Title
-              order={3}
+            {/* 站名是品牌識別不是內容標題：不用 h 標籤，
+                否則每頁第一個標題都是 h3、跳過 h1，過不了無障礙檢測。 */}
+            <Text
+              component="span"
               style={{
                 margin: 0,
                 fontWeight: 700,
+                fontSize: '1.4rem',
                 background: 'linear-gradient(135deg, var(--mantine-color-blue-7) 0%, var(--mantine-color-blue-9) 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
@@ -85,7 +88,7 @@ export function App() {
               }}
             >
               臺北市短網址服務
-            </Title>
+            </Text>
             <Group
               component="nav"
               aria-label="主要功能選單"
