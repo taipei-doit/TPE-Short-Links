@@ -1,5 +1,6 @@
 import { Divider, Group, Stack, Table, Text, Title } from '@mantine/core';
 
+import { Crumbs } from '../components/Crumbs';
 import { INK, SERIF_TC } from '../publicTheme';
 import { EmblemStripe } from './LandingPage';
 
@@ -23,7 +24,8 @@ const ACCESS_KEYS = [
 export function AccessibilityPage() {
   return (
     <Stack gap={48} style={{ maxWidth: '40em', margin: '0 auto' }}>
-      <Stack gap="md" pt="md">
+      <Crumbs current="無障礙聲明" />
+      <Stack gap="md">
         <Text size="sm" fw={600} c="dark.4" style={{ letterSpacing: 4 }}>
           臺北市政府資訊局
         </Text>

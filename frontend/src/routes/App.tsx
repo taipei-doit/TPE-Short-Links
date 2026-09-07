@@ -85,12 +85,13 @@ export function App() {
       }}
     >
       <AppShell.Header>
-        {/* 台灣無障礙規範慣例：三區塊導盲磚與快速鍵 Alt+U / Alt+C / Alt+Z */}
-        <a className="access-key-link" href="#header-block" id="AU" accessKey="U" title="上方功能區塊">
-          :::
-        </a>
+        {/* 跳到主要內容必須是整頁第一個可聚焦連結（GN1240100E），
+            之後才是三區塊導盲磚與快速鍵 Alt+U / Alt+C / Alt+Z */}
         <a className="access-key-link" href="#main-block" title="跳到主要內容">
           跳到主要內容
+        </a>
+        <a className="access-key-link" href="#header-block" id="AU" accessKey="U" title="上方功能區塊">
+          :::
         </a>
         <Container h="100%" size="lg" id="header-block">
           <Group h="100%" justify="space-between" align="center" gap="xl">
@@ -228,7 +229,7 @@ export function App() {
         <a className="access-key-link" href="#main-block" id="AC" accessKey="C" title="中央內容區塊">
           :::
         </a>
-        <Container size="lg" py="xl" id="main-block">
+        <Container size="lg" py="xl" id="main-block" tabIndex={-1} style={{ outline: 'none' }}>
           <Suspense fallback={routeFallback}>
           {isPublicPage ? (
             <>

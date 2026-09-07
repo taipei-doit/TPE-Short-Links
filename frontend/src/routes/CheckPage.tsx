@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { api } from '../api/client';
+import { Crumbs } from '../components/Crumbs';
 import { INK, SERIF_TC } from '../publicTheme';
 import { EmblemStripe } from './LandingPage';
 
@@ -93,7 +94,8 @@ export function CheckPage() {
 
   return (
     <Stack gap="xl" style={{ maxWidth: '40em', margin: '0 auto' }}>
-      <Stack gap="sm" pt="md">
+      <Crumbs current="短網址查核" />
+      <Stack gap="sm">
         <Group gap="sm" align="center">
           <IconShieldCheck size={30} color={INK} />
           <Title
