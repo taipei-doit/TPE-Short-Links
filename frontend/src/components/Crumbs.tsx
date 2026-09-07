@@ -6,7 +6,7 @@ export function Crumbs({ current }: { current: string }) {
   return (
     <nav aria-label="路徑連結列">
       <Breadcrumbs separator="／" separatorMargin={8}>
-        <Anchor component={Link} to="/" size="sm" c="blue.8" fw={500}>
+        <Anchor component={Link} to="/" size="sm" c="brand.8" fw={500}>
           首頁
         </Anchor>
         <Text size="sm" c="dark.5" aria-current="page">

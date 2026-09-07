@@ -35,9 +35,23 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       defaultColorScheme="light"
       cssVariablesResolver={cssVariablesResolver}
       theme={{
-        primaryColor: 'blue',
-        // blue-6 對白底僅 3.1:1，過不了 WCAG AA；shade 8 (#1971c2) 為 4.6:1，
-        // 實心按鈕與連結色一併達標。
+        // 品牌藍 #0F5C86 對白底 7.2:1，同時滿足 AAA 的 7:1 文字對比，
+        // 且與 QR 樣式、公開頁的墨藍語彙一致。
+        colors: {
+          brand: [
+            '#E9F2F7',
+            '#D3E5EE',
+            '#ABCBDC',
+            '#82B1C9',
+            '#5E9AB8',
+            '#4189AC',
+            '#2C7DA4',
+            '#1E6C94',
+            '#0F5C86',
+            '#094463',
+          ],
+        },
+        primaryColor: 'brand',
         primaryShade: 8,
         defaultRadius: 'md',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif',

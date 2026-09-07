@@ -8,7 +8,7 @@ import {
   IconSearch,
   IconShieldCheck,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { api } from '../api/client';
@@ -55,6 +55,7 @@ export function CheckPage() {
 
   const [value, setValue] = useState(urlTarget);
   const [inputError, setInputError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState<{ target: string; result: CheckResult } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -84,7 +85,9 @@ export function CheckPage() {
   const submit = () => {
     const t = normalizeTarget(value);
     if (!t) {
-      setInputError('請輸入短網址代碼，或貼上完整的 url.taipei 短網址');
+      // 檢核 GN2330300E：錯誤時除了文字說明，鍵盤焦點也要導回出錯欄位
+      setInputError('必填欄位未填寫或格式不正確：請輸入短網址代碼，或貼上完整的 url.taipei 短網址');
+      inputRef.current?.focus();
       return;
     }
     // 讓網址列同步，查核結果可以直接複製網址轉傳
@@ -125,7 +128,9 @@ export function CheckPage() {
       <Card withBorder padding="xl" radius="md" style={cardStyle}>
         <Stack gap="md">
           <TextInput
-            label="短網址或代碼"
+            ref={inputRef}
+            label="短網址或代碼（必填）"
+            autoComplete="off"
             placeholder="例如 https://url.taipei/AAAA 或 AAAA"
             value={value}
             error={inputError}

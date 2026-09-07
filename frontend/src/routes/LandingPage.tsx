@@ -157,12 +157,12 @@ export function LandingPage() {
         <Divider color="gray.3" />
         <Text size="md" c="dark.6" style={{ lineHeight: 1.9 }}>
           本服務由
-          <Anchor href="https://doit.gov.taipei" target="_blank" rel="noopener" fw={600} c="blue.8">
+          <Anchor href="https://doit.gov.taipei" target="_blank" rel="noopener" fw={600} c="brand.8">
             臺北市政府資訊局
           </Anchor>
           維運。若您發現可疑的 url.taipei 連結，或對本服務有任何疑問，歡迎透過臺北市民當家熱線
           1999 反映，本府將儘速處理。更多市政資訊請參閱
-          <Anchor href="https://www.gov.taipei" target="_blank" rel="noopener" fw={600} c="blue.8">
+          <Anchor href="https://www.gov.taipei" target="_blank" rel="noopener" fw={600} c="brand.8">
             臺北市政府全球資訊網
           </Anchor>
           。
