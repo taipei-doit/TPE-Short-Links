@@ -612,6 +612,7 @@ export function FilesPage() {
                   ? `${files.length} 個檔案，共 ${formatSize(totalBytes)}`
                   : '可一次選取多個檔案，它們會共用同一個連結與 PIN 碼'
               }
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
             />
             <Select
               label="有效期限"
@@ -627,6 +628,7 @@ export function FilesPage() {
               onChange={(v) => setExpiryPreset((v as ExpiryPreset) ?? '7')}
               size="md"
               radius="md"
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
             />
           </Group>
           {expiryPreset === 'custom' && (
@@ -647,6 +649,7 @@ export function FilesPage() {
               onChange={(e) => setNote(e.currentTarget.value)}
               size="md"
               radius="md"
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
             />
             <TextInput
               label="自訂代碼（選填）"
@@ -658,6 +661,7 @@ export function FilesPage() {
               radius="md"
               description="分享網址會是 url.taipei/f/代碼；限英數字、底線與連字號"
               styles={{ input: { fontFamily: 'monospace' } }}
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
             />
             <TextInput
               label="自訂 PIN 碼（選填）"
@@ -670,6 +674,7 @@ export function FilesPage() {
               radius="md"
               description={`${PIN_LENGTH} 碼英文字母與數字組合`}
               styles={{ input: { fontFamily: 'monospace', letterSpacing: '2px' } }}
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
             />
           </Group>
           <UploadProgress uploads={uploads} />

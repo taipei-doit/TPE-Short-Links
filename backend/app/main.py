@@ -784,14 +784,14 @@ def list_blocked_words(
 
 @app.post("/api/blocked-words")
 def add_blocked_word(
-    word: str = Query(..., min_length=1, max_length=4),
+    word: str = Query(..., min_length=1, max_length=6),
     db: Session = Depends(get_db),
     _auth: dict = Depends(get_firebase_user),
 ) -> dict[str, str]:
     """Add a word to the blocked list."""
     word_lower = word.strip().lower()
-    if not word_lower or len(word_lower) > 4:
-        raise HTTPException(status_code=422, detail="Word must be 1-4 characters")
+    if not word_lower or len(word_lower) > 6:
+        raise HTTPException(status_code=422, detail="Word must be 1-6 characters")
 
     # Check if already exists
     existing = db.execute(select(BlockedWord).where(BlockedWord.word == word_lower)).scalar_one_or_none()
@@ -812,7 +812,7 @@ def add_blocked_word(
 
 @app.delete("/api/blocked-words/{word}")
 def delete_blocked_word(
-    word: str = Path(..., min_length=1, max_length=4),
+    word: str = Path(..., min_length=1, max_length=6),
     db: Session = Depends(get_db),
     _auth: dict = Depends(get_firebase_user),
 ) -> dict[str, str]:

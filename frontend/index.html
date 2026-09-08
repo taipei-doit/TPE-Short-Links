@@ -46,13 +46,20 @@
         left: 8px;
         top: 8px;
       }
+      /* 導航列不透明背景保底（選擇器加上元素名，勝過 Mantine 後載入的同分規則）：
+         無論固定或隨頁捲動，頁首下方內容都不會與導航文字疊透。 */
+      header.mantine-AppShell-header {
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        border-bottom: 2px solid #dee2e6;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      }
       /* 無障礙 CS2141006E：可視高度矮（如手機橫向）時解除頁首固定，
          改隨頁面捲動，避免固定頁首吃掉過多可視空間。 */
       @media (max-height: 480px) {
-        .mantine-AppShell-header {
+        header.mantine-AppShell-header {
           position: static;
         }
-        .mantine-AppShell-main {
+        main.mantine-AppShell-main {
           padding-top: var(--app-shell-padding, 1rem);
           min-height: auto;
         }

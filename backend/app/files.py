@@ -49,7 +49,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth import get_firebase_user
 from app.db.session import get_db
 from app.i18n import HTML_LANG, LANGUAGE_NAMES, STRINGS, pick_language
-from app.models import FileShare, SharedFile
+from app.models import BlockedWord, FileShare, SharedFile
 from app.pages import PAGE_STYLE, redirect_to_not_found
 from app.pins import PIN_LENGTH, generate_pin, hash_pin, validate_pin, verify_pin
 from app.schemas import (
@@ -277,8 +277,17 @@ def share_to_out(share: FileShare) -> FileShareOut:
 
 def generate_share_code(db: Session) -> str:
     settings = get_settings()
+    # 檔案代碼有 6 碼，與短網址代碼同標準：避開含封鎖字詞（3 字元以上）的組合。
+    blocked_words = set(
+        db.execute(select(BlockedWord.word).where(func.length(BlockedWord.word) >= 3))
+        .scalars()
+        .all()
+    )
     for _ in range(100):
         code = generate_code(settings.FILE_CODE_LENGTH)
+        code_lower = code.lower()
+        if any(word in code_lower for word in blocked_words):
+            continue
         exists = db.execute(select(FileShare.code).where(FileShare.code == code)).first()
         if exists is None:
             return code

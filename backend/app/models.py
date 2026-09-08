@@ -60,7 +60,7 @@ class ShortLink(Base):
 class BlockedWord(Base):
     __tablename__ = "blocked_words"
 
-    word: Mapped[str] = mapped_column(String(4), primary_key=True)
+    word: Mapped[str] = mapped_column(String(6), primary_key=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

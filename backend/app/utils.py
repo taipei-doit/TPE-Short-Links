@@ -25,7 +25,7 @@ def _load_blocked_words() -> set[str]:
     with open(_BLOCKED_WORDS_FILE, "r", encoding="utf-8") as f:
         for line in f:
             word = line.strip().lower()
-            if word and len(word) <= 4:
+            if word and len(word) <= 6:
                 words.add(word)
     return words
 
