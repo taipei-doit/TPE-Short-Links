@@ -7,7 +7,10 @@
       name="description"
       content="url.taipei 是臺北市政府的官方短網址服務。您可以在此查核收到的短網址是否為本府所發、以及它將前往的網站，防範假冒與詐騙。"
     />
-    <title>臺北市短網址服務</title>
+    <title>臺北市政府資訊局 臺北市短網址服務</title>
+    <!-- 市徽 favicon 需經 Vite 打包進 /assets/（url.taipei 網域僅代理 /assets/*，
+         public/ 根目錄的檔案會被當成短碼查詢）。 -->
+    <link rel="icon" type="image/x-icon" href="./src/assets/taipei-emblem.ico" />
     <!-- 公開頁大標使用明體（公文語彙）。只載單一字重、且非阻塞載入：
          先用系統明體畫出文字，網路字型到了再換，不佔關鍵渲染路徑。 -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -42,6 +45,17 @@
       .access-key-link:focus {
         left: 8px;
         top: 8px;
+      }
+      /* 無障礙 CS2141006E：可視高度矮（如手機橫向）時解除頁首固定，
+         改隨頁面捲動，避免固定頁首吃掉過多可視空間。 */
+      @media (max-height: 480px) {
+        .mantine-AppShell-header {
+          position: static;
+        }
+        .mantine-AppShell-main {
+          padding-top: var(--app-shell-padding, 1rem);
+          min-height: auto;
+        }
       }
     </style>
   </head>

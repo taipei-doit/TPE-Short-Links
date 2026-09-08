@@ -96,6 +96,7 @@ export function CreatePage() {
                 href={existingUrl}
                 target="_blank"
                 rel="noreferrer"
+                title="[另開新視窗]開啟此網址"
               >
                 {existingUrl}
               </Text>
@@ -300,6 +301,7 @@ export function CreatePage() {
                 href={result.short_url}
                 target="_blank"
                 rel="noreferrer"
+                title="[另開新視窗]開啟短網址"
                 size="md"
                 radius="md"
               >

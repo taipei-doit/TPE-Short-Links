@@ -259,6 +259,7 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
             href={shortUrl}
             target="_blank"
             rel="noopener"
+            title="[另開新視窗]前往目標網站"
             withBorder
             radius="md"
             padding={0}
@@ -302,6 +303,7 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
             href={shortUrl}
             target="_blank"
             rel="noopener"
+            title="[另開新視窗]前往目標網站"
             leftSection={<IconExternalLink size={18} />}
             size="md"
             radius="md"

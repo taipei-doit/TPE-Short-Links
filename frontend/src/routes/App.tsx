@@ -4,6 +4,9 @@ import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconT
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
+// 資訊局識別標誌：import 進 bundle 讓 Vite 產出 /assets/ 雜湊檔名，
+// url.taipei 網域只代理 /assets/*，不能放 public/ 根目錄。
+import doitLogo from '../assets/doit-logo.png';
 // 公開頁（聲明、查核、無障礙）要最快畫出來，維持同步載入；
 // 管理端與 QR 產生器按需載入，公開頁首屏不必下載整個後台。
 import { AccessibilityPage } from './AccessibilityPage';
@@ -44,7 +47,9 @@ export function App() {
     const hit = PAGE_TITLES.find(
       ([p]) => location.pathname === p || location.pathname.startsWith(`${p}/`),
     );
-    document.title = hit ? `${hit[1]}｜臺北市短網址服務` : '臺北市短網址服務';
+    document.title = hit
+      ? `${hit[1]}｜臺北市政府資訊局 臺北市短網址服務`
+      : '臺北市政府資訊局 臺北市短網址服務';
   }, [location.pathname]);
 
   // 這些路由「免登入」（查核與聲明頁對民眾公開；QR 產生器則憑 PIN 供機關使用），
@@ -97,20 +102,30 @@ export function App() {
           <Group h="100%" justify="space-between" align="center" gap="xl">
             {/* 站名是品牌識別不是內容標題：不用 h 標籤，
                 否則每頁第一個標題都是 h3、跳過 h1，過不了無障礙檢測。 */}
-            <Text
-              component="span"
-              style={{
-                margin: 0,
-                fontWeight: 700,
-                fontSize: '1.4rem',
-                background: 'linear-gradient(135deg, var(--mantine-color-blue-7) 0%, var(--mantine-color-blue-9) 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}
-            >
-              臺北市短網址服務
-            </Text>
+            <Group gap="sm" align="center" wrap="nowrap">
+              {/* 機關識別屬資訊性圖片，alt 必須寫機關名稱（無障礙 EIC1000104）；
+                  logo 內含中英文局名，屬 WCAG 標誌字例外，不算「文字圖片」違規。 */}
+              <img
+                src={doitLogo}
+                alt="臺北市政府資訊局"
+                style={{ height: 'clamp(30px, 5.5vw, 40px)', width: 'auto', display: 'block' }}
+              />
+              <Text
+                component="span"
+                style={{
+                  margin: 0,
+                  fontWeight: 700,
+                  fontSize: 'clamp(1.05rem, 3vw, 1.4rem)',
+                  whiteSpace: 'nowrap',
+                  background: 'linear-gradient(135deg, var(--mantine-color-blue-7) 0%, var(--mantine-color-blue-9) 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                臺北市短網址服務
+              </Text>
+            </Group>
             <Group
               component="nav"
               aria-label="主要功能選單"
@@ -263,6 +278,7 @@ export function App() {
                   href="https://doit.gov.taipei"
                   target="_blank"
                   rel="noopener"
+                  title="[另開新視窗]臺北市政府資訊局"
                   style={{ textDecoration: 'none' }}
                 >
                   © 臺北市政府資訊局
@@ -306,6 +322,7 @@ export function App() {
                     href="https://www.gov.taipei"
                     target="_blank"
                     rel="noopener"
+                    title="[另開新視窗]臺北市政府全球資訊網"
                     style={{ textDecoration: 'none' }}
                   >
                     臺北市政府全球資訊網
