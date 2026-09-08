@@ -98,8 +98,10 @@ export function App() {
         <a className="access-key-link" href="#header-block" id="AU" accessKey="U" title="上方功能區塊">
           :::
         </a>
-        <Container h="100%" size="lg" id="header-block">
-          <Group h="100%" justify="space-between" align="center" gap="xl">
+        {/* 頁首高度固定 72px：整列必須 nowrap，內容一旦換行會溢出白色背景帶、
+            浮在頁面內容上。容器用 xl 讓 logo＋站名＋完整選單在寬螢幕塞得下。 */}
+        <Container h="100%" size="xl" id="header-block">
+          <Group h="100%" justify="space-between" align="center" gap="xl" wrap="nowrap">
             {/* 站名是品牌識別不是內容標題：不用 h 標籤，
                 否則每頁第一個標題都是 h3、跳過 h1，過不了無障礙檢測。 */}
             <Group gap="sm" align="center" wrap="nowrap">
@@ -110,8 +112,11 @@ export function App() {
                 alt="臺北市政府資訊局"
                 style={{ height: 'clamp(30px, 5.5vw, 40px)', width: 'auto', display: 'block' }}
               />
+              {/* 登入後右側有完整選單，1408px 以下先收站名讓位（logo 已含機關名）；
+                  公開頁沒有選單，任何寬度都顯示站名。 */}
               <Text
                 component="span"
+                visibleFrom={user ? 'xl' : undefined}
                 style={{
                   margin: 0,
                   fontWeight: 700,
