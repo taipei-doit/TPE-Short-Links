@@ -37,6 +37,8 @@ from app.schemas import (
     AdminDeleteIn,
     AdminIn,
     AdminOut,
+    BlockedWordOut,
+    BlockedWordToggleIn,
     DisableOut,
     EnableOut,
     LinkCreateIn,
@@ -249,9 +251,13 @@ def create_link(
     else:
         # Auto-generate code
         code = None
-        # Pre-fetch blocked words for efficiency (only 3-4 char words matter for blocking)
+        # Pre-fetch enabled blocked words (words shorter than 3 chars never match)
         blocked_words = set(
-            db.execute(select(BlockedWord.word).where(func.length(BlockedWord.word) >= 3))
+            db.execute(
+                select(BlockedWord.word).where(
+                    func.length(BlockedWord.word) >= 3, BlockedWord.enabled.is_(True)
+                )
+            )
             .scalars()
             .all()
         )
@@ -772,14 +778,14 @@ def qr_status(target: str, db: Session = Depends(get_db)) -> dict[str, str]:
     return {"state": "active"}
 
 
-@app.get("/api/blocked-words", response_model=list[str])
+@app.get("/api/blocked-words", response_model=list[BlockedWordOut])
 def list_blocked_words(
     db: Session = Depends(get_db),
     _auth: dict = Depends(get_firebase_user),
-) -> list[str]:
+) -> list[BlockedWordOut]:
     """List all blocked words from database."""
-    words = db.execute(select(BlockedWord.word).order_by(BlockedWord.word)).scalars().all()
-    return list(words)
+    rows = db.execute(select(BlockedWord).order_by(BlockedWord.word)).scalars().all()
+    return [BlockedWordOut(word=row.word, enabled=row.enabled) for row in rows]
 
 
 @app.post("/api/blocked-words")
@@ -808,6 +814,25 @@ def add_blocked_word(
         raise HTTPException(status_code=409, detail="Word already exists")
 
     return {"message": "Word added", "word": word_lower}
+
+
+@app.patch("/api/blocked-words/{word}")
+def toggle_blocked_word(
+    payload: BlockedWordToggleIn,
+    word: str = Path(..., min_length=1, max_length=6),
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> dict[str, str | bool]:
+    """Enable or disable a blocked word without removing it from the list."""
+    word_lower = word.strip().lower()
+    blocked_word = db.execute(select(BlockedWord).where(BlockedWord.word == word_lower)).scalar_one_or_none()
+    if not blocked_word:
+        raise HTTPException(status_code=404, detail="Word not found")
+
+    blocked_word.enabled = payload.enabled
+    db.commit()
+
+    return {"message": "Word updated", "word": word_lower, "enabled": payload.enabled}
 
 
 @app.delete("/api/blocked-words/{word}")

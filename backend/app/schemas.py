@@ -26,6 +26,15 @@ class WhitelistCheckIn(BaseModel):
     email: EmailStr
 
 
+class BlockedWordOut(BaseModel):
+    word: str
+    enabled: bool
+
+
+class BlockedWordToggleIn(BaseModel):
+    enabled: bool
+
+
 class TagOut(BaseModel):
     id: int
     name: str

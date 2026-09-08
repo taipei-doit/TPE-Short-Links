@@ -5,6 +5,7 @@ import {
   Card,
   Group,
   Stack,
+  Switch,
   Table,
   Text,
   TextInput,
@@ -20,12 +21,14 @@ import { api } from '../api/client';
 
 const LETTERS = ['0-9', ...'abcdefghijklmnopqrstuvwxyz'.split('')];
 
+type BlockedWord = { word: string; enabled: boolean };
+
 function letterOf(word: string): string {
   return /^[0-9]/.test(word) ? '0-9' : word[0];
 }
 
 export function BlockedWordsPage() {
-  const [words, setWords] = useState<string[]>([]);
+  const [words, setWords] = useState<BlockedWord[]>([]);
   const [loading, setLoading] = useState(false);
   const [newWord, setNewWord] = useState('');
   const [letter, setLetter] = useState('a');
@@ -56,10 +59,10 @@ export function BlockedWordsPage() {
   }, []);
 
   const groups = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, BlockedWord[]>();
     for (const l of LETTERS) map.set(l, []);
     for (const w of words) {
-      const bucket = map.get(letterOf(w));
+      const bucket = map.get(letterOf(w.word));
       if (bucket) bucket.push(w);
     }
     return map;
@@ -69,7 +72,7 @@ export function BlockedWordsPage() {
   const visible = useMemo(() => {
     if (searching) {
       const q = search.trim().toLowerCase();
-      return words.filter((w) => w.includes(q));
+      return words.filter((w) => w.word.includes(q));
     }
     return groups.get(letter) ?? [];
   }, [words, groups, letter, search, searching]);
@@ -94,16 +97,28 @@ export function BlockedWordsPage() {
     }
   }
 
+  async function handleToggle(word: string, enabled: boolean) {
+    // 先樂觀更新開關，API 失敗再還原，避免每撥一下都等網路來回。
+    setWords((prev) => prev.map((w) => (w.word === word ? { ...w, enabled } : w)));
+    try {
+      await api.toggleBlockedWord(word, enabled);
+    } catch (e) {
+      setWords((prev) => prev.map((w) => (w.word === word ? { ...w, enabled: !enabled } : w)));
+      const msg = e instanceof Error ? e.message : '更新失敗';
+      notifications.show({ color: 'red', message: msg });
+    }
+  }
+
   function handleDelete(word: string) {
     modals.openConfirmModal({
       title: '移除封鎖字詞？',
       children: (
         <Text size="sm">
-          將移除{' '}
+          將永久移除{' '}
           <Text span fw={600} style={{ fontFamily: 'monospace' }}>
             {word}
           </Text>
-          ，之後自動產生的代碼將不再避開這個字詞。
+          。若只是暫時不想封鎖，建議改用開關停用即可。
         </Text>
       ),
       labels: { confirm: '移除', cancel: '取消' },
@@ -128,8 +143,8 @@ export function BlockedWordsPage() {
           封鎖字詞管理
         </Title>
         <Text c="dimmed" size="sm">
-          自動產生的短網址（4 碼）與檔案分享（6 碼）代碼會避開這些字詞；3
-          個字元以上的字詞才會參與封鎖比對。初始清單由 blocked_words.txt 經資料庫遷移種入，共{' '}
+          自動產生的短網址（4 碼）與檔案分享（6 碼）代碼會避開已啟用的字詞；3
+          個字元以上的字詞才會參與比對。初始清單由 blocked_words.txt 經資料庫遷移種入，共{' '}
           {words.length.toLocaleString()} 筆。
         </Text>
       </div>
@@ -233,7 +248,7 @@ export function BlockedWordsPage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ fontWeight: 600 }}>字詞</Table.Th>
-                <Table.Th style={{ width: '120px', fontWeight: 600 }}>是否封鎖代碼</Table.Th>
+                <Table.Th style={{ width: '140px', fontWeight: 600 }}>封鎖代碼</Table.Th>
                 <Table.Th style={{ width: '100px' }}></Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -255,37 +270,48 @@ export function BlockedWordsPage() {
                   </Table.Td>
                 </Table.Tr>
               ) : (
-                visible.map((word) => {
-                  const blocksCodes = word.length >= 3;
-                  return (
-                    <Table.Tr key={word}>
-                      <Table.Td>
-                        <Text fw={600} size="sm" style={{ fontFamily: 'monospace' }}>
-                          {word}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge color={blocksCodes ? 'red' : 'gray'} size="sm" variant="light">
-                          {blocksCodes ? '是' : '否'}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Tooltip label="移除字詞" withArrow>
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            onClick={() => handleDelete(word)}
-                            aria-label={`移除封鎖字詞 ${word}`}
-                            size="md"
-                            radius="md"
-                          >
-                            <IconTrash size={18} />
-                          </ActionIcon>
+                visible.map(({ word, enabled }) => (
+                  <Table.Tr key={word}>
+                    <Table.Td>
+                      <Text fw={600} size="sm" style={{ fontFamily: 'monospace' }}>
+                        {word}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {word.length >= 3 ? (
+                        <Switch
+                          checked={enabled}
+                          onChange={(e) => handleToggle(word, e.currentTarget.checked)}
+                          size="sm"
+                          color="brand"
+                          aria-label={`${enabled ? '停用' : '啟用'}封鎖字詞 ${word}`}
+                          onLabel="封鎖"
+                          offLabel="停用"
+                        />
+                      ) : (
+                        <Tooltip label="1–2 字元的字詞不參與代碼比對" withArrow>
+                          <Badge color="gray" size="sm" variant="light">
+                            過短不比對
+                          </Badge>
                         </Tooltip>
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Tooltip label="永久移除字詞" withArrow>
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          onClick={() => handleDelete(word)}
+                          aria-label={`移除封鎖字詞 ${word}`}
+                          size="md"
+                          radius="md"
+                        >
+                          <IconTrash size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Table.Td>
+                  </Table.Tr>
+                ))
               )}
             </Table.Tbody>
           </Table>

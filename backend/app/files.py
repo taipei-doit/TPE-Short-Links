@@ -279,7 +279,11 @@ def generate_share_code(db: Session) -> str:
     settings = get_settings()
     # 檔案代碼有 6 碼，與短網址代碼同標準：避開含封鎖字詞（3 字元以上）的組合。
     blocked_words = set(
-        db.execute(select(BlockedWord.word).where(func.length(BlockedWord.word) >= 3))
+        db.execute(
+            select(BlockedWord.word).where(
+                func.length(BlockedWord.word) >= 3, BlockedWord.enabled.is_(True)
+            )
+        )
         .scalars()
         .all()
     )

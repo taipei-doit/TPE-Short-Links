@@ -61,6 +61,8 @@ class BlockedWord(Base):
     __tablename__ = "blocked_words"
 
     word: Mapped[str] = mapped_column(String(6), primary_key=True)
+    # 關掉的字詞保留在清單上但不參與代碼比對。
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

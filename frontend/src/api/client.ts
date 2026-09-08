@@ -257,7 +257,12 @@ export const api = {
       image: string | null;
       site_name: string | null;
     }>(`/api/check-preview/${target}`),
-  listBlockedWords: () => apiFetch<string[]>('/api/blocked-words'),
+  listBlockedWords: () => apiFetch<{ word: string; enabled: boolean }[]>('/api/blocked-words'),
+  toggleBlockedWord: (word: string, enabled: boolean) =>
+    apiFetch<{ message: string; word: string; enabled: boolean }>(
+      `/api/blocked-words/${encodeURIComponent(word)}`,
+      { method: 'PATCH', body: JSON.stringify({ enabled }) },
+    ),
   addBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words?word=${encodeURIComponent(word)}`, { method: 'POST' }),
   deleteBlockedWord: (word: string) => apiFetch<{ message: string; word: string }>(`/api/blocked-words/${encodeURIComponent(word)}`, { method: 'DELETE' }),
   createTag: (name: string) => apiFetch<Tag>(`/api/tags?name=${encodeURIComponent(name)}`, { method: 'POST' }),
