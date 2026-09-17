@@ -42,6 +42,19 @@ function normalizeTarget(input: string): string | null {
 
 type CheckResult = { kind: 'link' | 'file_share'; state: string; original_url: string | null };
 
+/**
+ * 查核結果標題色。Mantine 預設的 red.8／orange.8／blue.8 壓在同色淺底上只有 3～4.5:1，
+ * 無障礙 AAA（GN3140600E）要求一般文字 7:1，這裡各自加深到 7.5:1 以上（對應淺底實測）。
+ */
+const RESULT_TITLE = {
+  danger: '#7F1D1D',
+  warning: '#6F3404',
+  info: '#0B3A66',
+  success: '#14532D',
+} as const;
+/** 欄位錯誤訊息：Mantine 預設紅 #E03131 對白底 4.5:1，加深到 7.4:1 */
+const FIELD_ERROR_COLOR = '#A61E1E';
+
 const cardStyle = {
   boxShadow: '0 2px 12px rgba(0, 0, 0, 0.1)',
   background: 'white',
@@ -83,6 +96,7 @@ export function CheckPage() {
   }, [urlTarget, runCheck]);
 
   const submit = () => {
+    if (checking) return;
     const t = normalizeTarget(value);
     if (!t) {
       // 檢核 GN2330300E：錯誤時除了文字說明，鍵盤焦點也要導回出錯欄位
@@ -91,7 +105,8 @@ export function CheckPage() {
       return;
     }
     // 讓網址列同步，查核結果可以直接複製網址轉傳
-    navigate(`/check/${t}`, { replace: true });
+    // keepFocus：這只是同步網址列、不算換頁，App 不要把焦點拉回頁首
+    navigate(`/check/${t}`, { replace: true, state: { keepFocus: true } });
     runCheck(t);
   };
 
@@ -134,6 +149,7 @@ export function CheckPage() {
             placeholder="例如 https://url.taipei/AAAA 或 AAAA"
             value={value}
             error={inputError}
+            styles={{ error: { color: FIELD_ERROR_COLOR } }}
             size="md"
             radius="md"
             onChange={(e) => {
@@ -145,9 +161,11 @@ export function CheckPage() {
             }}
           />
           <Group justify="flex-end">
+            {/* 不用 loading 屬性：它會停用按鈕，鍵盤焦點會掉回 body、查完得從頁首重新 Tab。
+                改為查核中維持可聚焦，重複送出由 submit 開頭的 checking 判斷擋下。 */}
             <Button
-              leftSection={<IconSearch size={18} />}
-              loading={checking}
+              leftSection={checking ? <Loader size={16} color="white" /> : <IconSearch size={18} />}
+              aria-busy={checking}
               onClick={submit}
               size="md"
               radius="md"
@@ -158,19 +176,22 @@ export function CheckPage() {
         </Stack>
       </Card>
 
-      {checking && (
-        <Group justify="center">
-          <Loader size="sm" />
-        </Group>
-      )}
+      {/* 查核結果是動態插入的內容：包在常駐的 role=status 區塊裡，報讀軟體才會主動唸出結果（AR2410300E） */}
+      <Stack gap="xl" role="status" aria-live="polite">
+        {checking && (
+          <Group justify="center">
+            <Loader size="sm" aria-label="查核中" />
+          </Group>
+        )}
 
-      {failed && (
-        <Alert color="red" icon={<IconAlertTriangle size={18} />}>
-          查詢失敗，請稍後再試。
-        </Alert>
-      )}
+        {failed && (
+          <Alert color="red" icon={<IconAlertTriangle size={18} />}>
+            查詢失敗，請稍後再試。
+          </Alert>
+        )}
 
-      {checked && <ResultCard target={checked.target} result={checked.result} />}
+        {checked && <ResultCard target={checked.target} result={checked.result} />}
+      </Stack>
     </Stack>
   );
 }
@@ -198,7 +219,12 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
 
   if (result.state === 'not_found') {
     return (
-      <Alert color="red" icon={<IconAlertTriangle size={18} />} title="查無此短網址">
+      <Alert
+        color="red"
+        icon={<IconAlertTriangle size={18} />}
+        title="查無此短網址"
+        styles={{ title: { color: RESULT_TITLE.danger } }}
+      >
         <Text size="sm">
           臺北市政府從未發出過 <Text span fw={600}>{shortUrl}</Text>{' '}
           這個短網址。若您在簡訊或文宣上看到它，請提高警覺，切勿點擊或掃描。
@@ -209,7 +235,12 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
 
   if (result.state === 'disabled' || result.state === 'expired') {
     return (
-      <Alert color="orange" icon={<IconInfoCircle size={18} />} title={result.state === 'disabled' ? '此短網址已停用' : '此短網址已過期'}>
+      <Alert
+        color="orange"
+        icon={<IconInfoCircle size={18} />}
+        title={result.state === 'disabled' ? '此短網址已停用' : '此短網址已過期'}
+        styles={{ title: { color: RESULT_TITLE.warning } }}
+      >
         <Text size="sm">
           <Text span fw={600}>{shortUrl}</Text>{' '}
           曾是本府發出的短網址，但目前已失效，點擊後只會看到官方說明頁，不會轉向任何網站。
@@ -220,7 +251,12 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
 
   if (result.kind === 'file_share') {
     return (
-      <Alert color="blue" icon={<IconFileZip size={18} />} title="這是本府的檔案分享連結">
+      <Alert
+        color="blue"
+        icon={<IconFileZip size={18} />}
+        title="這是本府的檔案分享連結"
+        styles={{ title: { color: RESULT_TITLE.info } }}
+      >
         <Text size="sm">
           <Text span fw={600}>{shortUrl}</Text>{' '}
           是臺北市政府的檔案分享頁，開啟後需輸入承辦提供的 PIN
@@ -235,7 +271,7 @@ function ResultCard({ target, result }: { target: string; result: CheckResult })
       <Stack gap="sm">
         <Group gap="xs">
           <IconCircleCheck size={24} color="var(--mantine-color-green-7)" />
-          <Text fw={700} size="lg" c="green.8">
+          <Text fw={700} size="lg" style={{ color: RESULT_TITLE.success }}>
             這是臺北市政府的有效短網址
           </Text>
         </Group>

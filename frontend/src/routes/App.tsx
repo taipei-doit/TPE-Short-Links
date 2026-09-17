@@ -1,5 +1,5 @@
-import { AppShell, Burger, Button, Container, Drawer, Group, Stack, Text } from '@mantine/core';
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { AppShell, Box, Burger, Button, Container, Drawer, Group, Stack, Text, VisuallyHidden } from '@mantine/core';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { IconFileUpload, IconLink, IconListSearch, IconLogout, IconShield, IconTags, IconUsers } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -43,6 +43,10 @@ export function App() {
   const { user, loading, signOut } = useAuth();
   const [navOpened, setNavOpened] = useState(false);
 
+  const pageTopRef = useRef<HTMLDivElement>(null);
+  const isFirstRender = useRef(true);
+  const [routeAnnouncement, setRouteAnnouncement] = useState('');
+
   useEffect(() => {
     const hit = PAGE_TITLES.find(
       ([p]) => location.pathname === p || location.pathname.startsWith(`${p}/`),
@@ -51,6 +55,33 @@ export function App() {
       ? `${hit[1]}｜臺北市政府資訊局 臺北市短網址服務`
       : '臺北市政府資訊局 臺北市短網址服務';
   }, [location.pathname]);
+
+  // SPA 換頁不會重新載入文件，瀏覽器不會自己重設焦點、報讀軟體也不知道內容換了。
+  // 每次導覽（含點到「目前這一頁」的連結，location.key 仍會變）都比照整頁載入：
+  // 捲回頂端、焦點回到頁首（GN1240300E、GN1210101E），並以 role=status 報讀新頁名稱（AR2410300E）。
+  // 頁面自己換網址但不算換頁的情況（查核頁送出後同步網址列）帶 state.keepFocus 跳過；
+  // 只有查詢參數變動（管理頁的搜尋、篩選、頁碼）也跳過，否則打字時焦點會被拉走。
+  const prevLocation = useRef({ pathname: location.pathname, search: location.search });
+  useEffect(() => {
+    const prev = prevLocation.current;
+    prevLocation.current = { pathname: location.pathname, search: location.search };
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if ((location.state as { keepFocus?: boolean } | null)?.keepFocus) return;
+    if (prev.pathname === location.pathname && prev.search !== location.search) return;
+    const hit = PAGE_TITLES.find(
+      ([p]) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+    );
+    const pageName = hit ? hit[1] : '服務聲明與隱私權宣告';
+    window.scrollTo(0, 0);
+    pageTopRef.current?.focus({ preventScroll: true });
+    // 先清空再填入：連續兩次導覽到同一頁時，文字有變化報讀軟體才會再唸一次
+    setRouteAnnouncement('');
+    const timer = window.setTimeout(() => setRouteAnnouncement(`已載入頁面：${pageName}`), 100);
+    return () => window.clearTimeout(timer);
+  }, [location.key, location.pathname, location.search, location.state]);
 
   // 這些路由「免登入」（查核與聲明頁對民眾公開；QR 產生器則憑 PIN 供機關使用），
   // 不等待登入狀態載入。根路徑只在對外網域（url.taipei，經後端代理）當服務聲明頁；
@@ -77,10 +108,15 @@ export function App() {
       header={{ height: 72 }}
       padding="lg"
       styles={{
+        // 公開頁的頁尾在 main 之外：由根節點撐滿視窗、main 吃掉剩餘高度，頁尾才會貼在底部。
+        root: isPublicPage
+          ? { minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#FAFBFC' }
+          : {},
         main: {
           // 公開頁走紙感白底；管理端維持原本的灰藍漸層。
           background: isPublicPage ? '#FAFBFC' : 'linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%)',
-          minHeight: '100vh',
+          minHeight: isPublicPage ? 'auto' : '100vh',
+          flex: isPublicPage ? '1 0 auto' : undefined,
         },
         header: {
           background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
@@ -90,6 +126,8 @@ export function App() {
       }}
     >
       <AppShell.Header>
+        {/* 換頁後焦點落在這裡：不可見、不進 Tab 順序，下一次 Tab 就是「跳到主要內容」 */}
+        <div ref={pageTopRef} tabIndex={-1} style={{ outline: 'none' }} />
         {/* 跳到主要內容必須是整頁第一個可聚焦連結（GN1240100E），
             之後才是三區塊導盲磚與快速鍵 Alt+U / Alt+C / Alt+Z */}
         <a className="access-key-link" href="#main-block" title="跳到主要內容">
@@ -131,6 +169,8 @@ export function App() {
                 臺北市短網址服務
               </Text>
             </Group>
+            {/* 公開頁沒有選單：不輸出空的 nav，避免報讀軟體唸出沒有內容的導覽地標 */}
+            {user && (
             <Group
               component="nav"
               aria-label="主要功能選單"
@@ -139,7 +179,7 @@ export function App() {
               wrap="nowrap"
               visibleFrom="lg"
             >
-              {user && navItems.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
                 return (
@@ -175,19 +215,18 @@ export function App() {
                   </Button>
                 );
               })}
-              {user && (
-                <Button
-                  variant="subtle"
-                  color="gray"
-                  leftSection={<IconLogout size={18} />}
-                  size="sm"
-                  radius="md"
-                  onClick={() => signOut()}
-                >
-                  登出
-                </Button>
-              )}
+              <Button
+                variant="subtle"
+                color="gray"
+                leftSection={<IconLogout size={18} />}
+                size="sm"
+                radius="md"
+                onClick={() => signOut()}
+              >
+                登出
+              </Button>
             </Group>
+            )}
             {user && (
               <Burger
                 opened={navOpened}
@@ -259,81 +298,6 @@ export function App() {
                 <Route path="/check/*" element={<CheckPage />} />
                 <Route path="/accessibility" element={<AccessibilityPage />} />
               </Routes>
-              <Group
-                component="footer"
-                id="footer-block"
-                justify="space-between"
-                mt={64}
-                pt="md"
-                pb="md"
-                style={{
-                  borderTop: '1px solid var(--mantine-color-gray-3)',
-                  maxWidth: '40em',
-                  margin: '64px auto 0',
-                  position: 'relative',
-                }}
-              >
-                <a className="access-key-link" href="#footer-block" id="AZ" accessKey="Z" title="下方功能區塊">
-                  :::
-                </a>
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  component="a"
-                  href="https://doit.gov.taipei"
-                  target="_blank"
-                  rel="noopener"
-                  title="[另開新視窗]臺北市政府資訊局"
-                  style={{ textDecoration: 'none' }}
-                >
-                  © 臺北市政府資訊局
-                </Text>
-                <Group gap="lg">
-                  {isPublicHost && (
-                    <>
-                      <Text
-                        size="xs"
-                        c="dimmed"
-                        component={Link}
-                        to="/"
-                        style={{ textDecoration: 'none' }}
-                      >
-                        服務聲明與隱私權宣告
-                      </Text>
-                      <Text
-                        size="xs"
-                        c="dimmed"
-                        component={Link}
-                        to="/check"
-                        style={{ textDecoration: 'none' }}
-                      >
-                        短網址查核
-                      </Text>
-                      <Text
-                        size="xs"
-                        c="dimmed"
-                        component={Link}
-                        to="/accessibility"
-                        style={{ textDecoration: 'none' }}
-                      >
-                        無障礙聲明
-                      </Text>
-                    </>
-                  )}
-                  <Text
-                    size="xs"
-                    c="dimmed"
-                    component="a"
-                    href="https://www.gov.taipei"
-                    target="_blank"
-                    rel="noopener"
-                    title="[另開新視窗]臺北市政府全球資訊網"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    臺北市政府全球資訊網
-                  </Text>
-                </Group>
-              </Group>
             </>
           ) : loading ? (
             <div style={{ padding: '2rem', textAlign: 'center' }}>載入中…</div>
@@ -356,7 +320,97 @@ export function App() {
           )}
           </Suspense>
         </Container>
+        {/* 換頁狀態訊息（AR2410300E）：區塊必須一直存在，報讀軟體才會唸出後來填入的文字 */}
+        <VisuallyHidden role="status" aria-live="polite">
+          {routeAnnouncement}
+        </VisuallyHidden>
       </AppShell.Main>
+      {/* 頁尾必須是 <main> 的兄弟而非子孫：放在 main 裡面時報讀軟體只認得「主要內容」一個地標
+          （AR3130600E）。main 的 min-height 因此改為 auto，由 AppShell 根節點撐滿視窗高度。 */}
+      {isPublicPage && (
+        <Box
+          component="footer"
+          id="footer-block"
+          aria-label="下方功能區塊"
+          style={{
+            padding: '0 var(--mantine-spacing-lg) var(--mantine-spacing-xl)',
+            background: '#FAFBFC',
+          }}
+        >
+          <Group
+            justify="space-between"
+            pt="md"
+            pb="md"
+            style={{
+              borderTop: '1px solid var(--mantine-color-gray-3)',
+              maxWidth: '40em',
+              margin: '8px auto 0',
+              position: 'relative',
+            }}
+          >
+            <a className="access-key-link" href="#footer-block" id="AZ" accessKey="Z" title="下方功能區塊">
+              :::
+            </a>
+            <Text
+              size="xs"
+              c="dimmed"
+              component="a"
+              href="https://doit.gov.taipei"
+              target="_blank"
+              rel="noopener"
+              title="[另開新視窗]臺北市政府資訊局"
+              style={{ textDecoration: 'none' }}
+            >
+              © 臺北市政府資訊局
+            </Text>
+            <Group gap="lg">
+              {isPublicHost && (
+                <>
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    component={Link}
+                    to="/"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    服務聲明與隱私權宣告
+                  </Text>
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    component={Link}
+                    to="/check"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    短網址查核
+                  </Text>
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    component={Link}
+                    to="/accessibility"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    無障礙聲明
+                  </Text>
+                </>
+              )}
+              <Text
+                size="xs"
+                c="dimmed"
+                component="a"
+                href="https://www.gov.taipei"
+                target="_blank"
+                rel="noopener"
+                title="[另開新視窗]臺北市政府全球資訊網"
+                style={{ textDecoration: 'none' }}
+              >
+                臺北市政府全球資訊網
+              </Text>
+            </Group>
+          </Group>
+        </Box>
+      )}
     </AppShell>
   );
 }
