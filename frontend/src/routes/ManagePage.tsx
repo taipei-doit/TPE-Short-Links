@@ -237,6 +237,21 @@ function TargetCell({
   );
 }
 
+/** 網域到期前多少天內才在列表標記；與 DomainStatus 的警示色同一門檻。 */
+const DOMAIN_WARN_DAYS = 60;
+
+/**
+ * 這條短網址是否「比網域活得久，而且事情已迫在眉睫」。永久有效本身是允許的，
+ * 平時不標；網域 60 天內到期標橘、已到期標紅，其餘一律安靜。
+ */
+function domainUrgency(link: Link): 'soon' | 'lapsed' | null {
+  if (!link.exceeds_domain_expiry || !link.domain_expires_at) return null;
+  const daysLeft = dayjs(link.domain_expires_at).diff(dayjs(), 'day');
+  if (daysLeft < 0) return 'lapsed';
+  if (daysLeft <= DOMAIN_WARN_DAYS) return 'soon';
+  return null;
+}
+
 function statusBadge(link: Link) {
   if (link.is_expired) return <Badge color="orange">已過期</Badge>;
   if (link.status === 'active') return <Badge color="green">使用中</Badge>;
@@ -438,30 +453,34 @@ export function ManagePage() {
             : d.status === 'error'
               ? '暫時查不到註冊資料'
               : '不適用';
+      // 永久有效本來就允許，平時不嘮叨；只在網域快到期（或已到期）、
+      // 真的該有人去處理時，才點出有幾筆會受影響。
+      const capDays = d.status === 'ok' && d.expires_at ? dayjs(d.expires_at).diff(dayjs(), 'day') : null;
+      const urgent = capDays !== null && capDays <= DOMAIN_WARN_DAYS && res.over_cap_links > 0;
       notifications.show({
-        color: d.status === 'error' || res.over_cap_links > 0 ? 'orange' : 'green',
-        autoClose: res.over_cap_links > 0 ? 12000 : 5000,
-        message:
-          res.over_cap_links > 0 ? (
-            <Text size="sm">
-              網域 {d.name}：{state}；有 {res.over_cap_links} 筆短網址的有效期限超過網域註冊期限。{' '}
-              <Anchor
-                size="sm"
-                fw={600}
-                component="button"
-                type="button"
-                onClick={() => {
-                  notifications.clean();
-                  updateParams({ over_cap: '1', domain: d.name, status: null, tag: null, q: null, page: null });
-                  setQueryInput('');
-                }}
-              >
-                查看這 {res.over_cap_links} 筆
-              </Anchor>
-            </Text>
-          ) : (
-            `網域 ${d.name}：${state}`
-          ),
+        color: d.status === 'error' ? 'orange' : urgent ? (capDays! < 0 ? 'red' : 'orange') : 'green',
+        autoClose: urgent ? 12000 : 5000,
+        message: urgent ? (
+          <Text size="sm">
+            網域 {d.name}：{state}
+            {capDays! < 0 ? '，已到期' : `，剩 ${capDays} 天`}；有 {res.over_cap_links} 筆永久有效的短網址會受影響。{' '}
+            <Anchor
+              size="sm"
+              fw={600}
+              component="button"
+              type="button"
+              onClick={() => {
+                notifications.clean();
+                updateParams({ over_cap: '1', domain: d.name, status: null, tag: null, q: null, page: null });
+                setQueryInput('');
+              }}
+            >
+              查看這 {res.over_cap_links} 筆
+            </Anchor>
+          </Text>
+        ) : (
+          `網域 ${d.name}：${state}`
+        ),
       });
       load();
     } catch (e) {
@@ -785,15 +804,24 @@ export function ManagePage() {
                   </Table.Td>
                   <Table.Td>
                     <Text size="sm">{l.expires_at ? dayjs(l.expires_at).format('YYYY-MM-DD HH:mm') : '永久有效'}</Text>
-                    {l.exceeds_domain_expiry ? (
+                    {domainUrgency(l) ? (
                       <Tooltip
-                        label="有效期限（或永久有效）超過目標網域的註冊到期日。網域到期若未續約，這條短網址會轉向可能已易主的網站，請留意該網域的續約狀況"
+                        label={
+                          domainUrgency(l) === 'lapsed'
+                            ? '目標網域的註冊已到期，而這條短網址仍有效。若網域未續約而被他人註冊，會轉向已易主的網站，請盡快確認'
+                            : `目標網域的註冊將於 ${dayjs(l.domain_expires_at).format('YYYY-MM-DD')} 到期，而這條短網址的有效期限在那之後（或永久）。請留意該網域的續約狀況`
+                        }
                         withArrow
                         multiline
                         maw={320}
                       >
-                        <Badge variant="light" color="orange" size="xs" style={{ cursor: 'help' }}>
-                          超過網域期限
+                        <Badge
+                          variant="light"
+                          color={domainUrgency(l) === 'lapsed' ? 'red' : 'orange'}
+                          size="xs"
+                          style={{ cursor: 'help' }}
+                        >
+                          {domainUrgency(l) === 'lapsed' ? '網域已到期' : '網域即將到期'}
                         </Badge>
                       </Tooltip>
                     ) : null}
