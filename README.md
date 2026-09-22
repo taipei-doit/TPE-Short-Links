@@ -169,9 +169,11 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 先加 `--dry-run` 可以只看會刪哪些、不動任何東西。
 
 網域註冊到期日的批次重查是 `scripts/refresh_domains.py`，由 Cloud Run Job `refresh-domains`
-（`python scripts/refresh_domains.py --backfill`）執行，Cloud Scheduler `refresh-domains-daily` 每日 03:30 觸發：
+（`python scripts/refresh_domains.py --backfill`）執行，**刻意不排程**、由管理員手動觸發
+（`gcloud run jobs execute refresh-domains --region=asia-east1 --wait`）：
 `--backfill` 替尚未登記網域的短網址補登，預設只重查 60 天內到期或 60 天沒查過的網域，
-`--all` 全部重查，`--dry-run` 只看不改。重查只更新後台記錄的上限，不會改動任何短網址的到期日。
+`--all` 全部重查，`--dry-run` 只看不改。重查只更新後台記錄的上限，不會改動任何短網址的到期日；
+疑似易主的網域會擱置、印出 SUSPECT，待管理員在後台確認。
 
 ## API 一覽
 
