@@ -180,7 +180,7 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 | 方法與路徑 | 說明 |
 |---|---|
 | `POST /api/links` | 建立短網址（可帶自訂 `code`） |
-| `GET /api/links?query=&tag_id=&status=&limit=&offset=` | 查詢清單 |
+| `GET /api/links?query=&tag_id=&status=&over_cap=&domain=&limit=&offset=` | 查詢清單（`over_cap=true` 只列超過網域註冊期限的；`domain=` 限定網域） |
 | `PATCH /api/links/{code}` | 修改原始網址與／或有效期限（只更新有傳的欄位；已停用者須先啟用） |
 | `POST /api/links/{code}/disable` | 停用 |
 | `POST /api/links/{code}/enable` | 重新啟用 |

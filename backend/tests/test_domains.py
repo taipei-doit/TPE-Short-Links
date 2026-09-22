@@ -242,6 +242,24 @@ def test_lookup_endpoint(client: TestClient, monkeypatch):
     assert client.get("/api/domains/lookup", params={"url": "not a url"}).status_code == 422
 
 
+def test_list_filters_over_cap_and_by_domain(client: TestClient, monkeypatch):
+    cap = days(200)
+    use_domains(monkeypatch, {"filt.example": ("ok", cap)})
+    create(client, "https://filt.example/perm", "DOM20")  # permanent: over the cap
+    create(client, "https://filt.example/ok", "DOM21", days(10))
+    create(client, "https://other.example/perm", "DOM22")  # unknown domain: never over
+
+    over = client.get("/api/links", params={"over_cap": "true"}).json()
+    assert [i["code"] for i in over["items"]] == ["DOM20"]
+    assert over["total"] == 1
+
+    by_domain = client.get("/api/links", params={"domain": "filt.example", "sort": "code", "order": "asc"}).json()
+    assert [i["code"] for i in by_domain["items"]] == ["DOM20", "DOM21"]
+
+    csv_body = client.get("/api/links/export", params={"over_cap": "true"}).content.decode("utf-8")
+    assert "DOM20" in csv_body and "DOM21" not in csv_body
+
+
 def test_export_includes_domain_columns(client: TestClient, monkeypatch):
     cap = days(365)
     use_domains(monkeypatch, {"csv.example": ("ok", cap)})

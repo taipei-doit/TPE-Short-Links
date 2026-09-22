@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Anchor,
   Badge,
   Box,
   Button,
@@ -31,6 +32,7 @@ import {
   IconQrcode,
   IconRefresh,
   IconSelector,
+  IconX,
 } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -257,6 +259,9 @@ export function ManagePage() {
   const sort = (searchParams.get('sort') as SortField) ?? 'created_at';
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1);
+  // 網域檢核：只看超過網域註冊期限的，或限定某個網域（刷新通知的「查看這幾筆」會帶這兩個參數）。
+  const overCap = searchParams.get('over_cap') === '1';
+  const domainFilter = searchParams.get('domain');
 
   function updateParams(patch: Record<string, string | null>) {
     setSearchParams(
@@ -314,6 +319,8 @@ export function ManagePage() {
         query: query.trim() || undefined,
         tag_id: tagId ? Number(tagId) : undefined,
         status,
+        over_cap: overCap || undefined,
+        domain: domainFilter || undefined,
         sort,
         order,
         limit,
@@ -334,7 +341,7 @@ export function ManagePage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status, tagId, query, sort, order]);
+  }, [page, status, tagId, query, sort, order, overCap, domainFilter]);
 
   function toggleSort(field: SortField) {
     const nextOrder = sort === field && order === 'desc' ? 'asc' : 'desc';
@@ -433,9 +440,28 @@ export function ManagePage() {
               : '不適用';
       notifications.show({
         color: d.status === 'error' || res.over_cap_links > 0 ? 'orange' : 'green',
+        autoClose: res.over_cap_links > 0 ? 12000 : 5000,
         message:
-          `網域 ${d.name}：${state}` +
-          (res.over_cap_links > 0 ? `；有 ${res.over_cap_links} 筆短網址的有效期限超過網域註冊期限，請個別調整` : ''),
+          res.over_cap_links > 0 ? (
+            <Text size="sm">
+              網域 {d.name}：{state}；有 {res.over_cap_links} 筆短網址的有效期限超過網域註冊期限。{' '}
+              <Anchor
+                size="sm"
+                fw={600}
+                component="button"
+                type="button"
+                onClick={() => {
+                  notifications.clean();
+                  updateParams({ over_cap: '1', domain: d.name, status: null, tag: null, q: null, page: null });
+                  setQueryInput('');
+                }}
+              >
+                查看這 {res.over_cap_links} 筆
+              </Anchor>
+            </Text>
+          ) : (
+            `網域 ${d.name}：${state}`
+          ),
       });
       load();
     } catch (e) {
@@ -510,6 +536,8 @@ export function ManagePage() {
         query: query.trim() || undefined,
         tag_id: tagId ? Number(tagId) : undefined,
         status,
+        over_cap: overCap || undefined,
+        domain: domainFilter || undefined,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : '匯出失敗';
@@ -613,7 +641,43 @@ export function ManagePage() {
               size="md"
               radius="md"
             />
+            <Select
+              label="網域檢核"
+              data={[
+                { value: 'all', label: '全部' },
+                { value: 'over_cap', label: '超過網域註冊期限' },
+              ]}
+              value={overCap ? 'over_cap' : 'all'}
+              onChange={(v) => updateParams({ over_cap: v === 'over_cap' ? '1' : null, page: null })}
+              size="md"
+              radius="md"
+            />
           </Group>
+          {domainFilter ? (
+            <Group gap="xs">
+              <Text size="sm" c="dimmed">
+                只顯示網域
+              </Text>
+              <Badge
+                variant="light"
+                color="blue"
+                size="lg"
+                rightSection={
+                  <ActionIcon
+                    size="xs"
+                    variant="transparent"
+                    color="blue"
+                    aria-label={`取消網域篩選 ${domainFilter}`}
+                    onClick={() => updateParams({ domain: null, page: null })}
+                  >
+                    <IconX size={12} />
+                  </ActionIcon>
+                }
+              >
+                {domainFilter}
+              </Badge>
+            </Group>
+          ) : null}
         </Stack>
       </Card>
 
@@ -657,7 +721,7 @@ export function ManagePage() {
               <Table.Tr>
                 <Table.Td colSpan={9}>
                   <Text c="dimmed" size="sm" ta="center" py="xl">
-                    {query || tagId || status !== 'all'
+                    {query || tagId || status !== 'all' || overCap || domainFilter
                       ? '查無符合篩選條件的資料'
                       : '目前尚無短網址，請至「建立短網址」頁面建立第一筆。'}
                   </Text>

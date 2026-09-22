@@ -385,6 +385,15 @@ def enforce_domain_cap(requested: dt.datetime | None, domain: Domain | None) -> 
         )
 
 
+def _over_cap_clause():
+    """SQL form of _exceeds_cap, for queries that already outer-join Domain."""
+    return and_(
+        Domain.status == STATUS_OK,
+        Domain.expires_at.is_not(None),
+        or_(ShortLink.expires_at.is_(None), ShortLink.expires_at > Domain.expires_at),
+    )
+
+
 def count_links_over_cap(db: Session, domain: Domain) -> int:
     """Links on this domain whose expiry (or permanence) outlives its registration."""
     cap = domain_cap(domain)
@@ -541,6 +550,9 @@ def list_links(
     offset: int = Query(default=0, ge=0),
     sort: Literal["created_at", "click_count", "expires_at", "code"] = Query(default="created_at"),
     order: Literal["asc", "desc"] = Query(default="desc"),
+    # 網域檢核篩選：只看到期日（或永久）超過網域註冊期限的、或限定某個網域。
+    over_cap: bool = Query(default=False),
+    domain: str | None = Query(default=None, max_length=253),
     db: Session = Depends(get_db),
 ) -> LinkListOut:
     now = now_utc()
@@ -563,6 +575,10 @@ def list_links(
         )
     if tag_id:
         where.append(ShortLink.tag_id == tag_id)
+    if domain:
+        where.append(ShortLink.domain_name == domain.strip().lower())
+    if over_cap:
+        where.append(_over_cap_clause())
 
     if status and status != "all":
         if status == "expired":
@@ -598,6 +614,8 @@ def export_links_csv(
     query: str | None = Query(default=None),
     tag_id: int | None = Query(default=None, ge=1),
     status: Literal["active", "disabled", "expired", "all"] | None = Query(default="all"),
+    over_cap: bool = Query(default=False),
+    domain: str | None = Query(default=None, max_length=253),
     db: Session = Depends(get_db),
     _auth: dict = Depends(get_firebase_user),
 ) -> Response:
@@ -623,6 +641,10 @@ def export_links_csv(
         )
     if tag_id:
         where.append(ShortLink.tag_id == tag_id)
+    if domain:
+        where.append(ShortLink.domain_name == domain.strip().lower())
+    if over_cap:
+        where.append(_over_cap_clause())
 
     if status and status != "all":
         if status == "expired":

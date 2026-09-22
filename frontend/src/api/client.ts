@@ -198,11 +198,17 @@ export const api = {
     order?: 'asc' | 'desc';
     limit?: number;
     offset?: number;
+    /** 只看到期日（或永久）超過網域註冊期限的 */
+    over_cap?: boolean;
+    /** 限定某個可註冊網域（gov.taipei） */
+    domain?: string;
   }) => {
     const sp = new URLSearchParams();
     if (params.query) sp.set('query', params.query);
     if (params.tag_id) sp.set('tag_id', String(params.tag_id));
     if (params.status) sp.set('status', params.status);
+    if (params.over_cap) sp.set('over_cap', 'true');
+    if (params.domain) sp.set('domain', params.domain);
     if (params.sort) sp.set('sort', params.sort);
     if (params.order) sp.set('order', params.order);
     if (params.limit) sp.set('limit', String(params.limit));
@@ -226,11 +232,15 @@ export const api = {
     query?: string;
     tag_id?: number;
     status?: 'active' | 'disabled' | 'expired' | 'all';
+    over_cap?: boolean;
+    domain?: string;
   }) => {
     const sp = new URLSearchParams();
     if (params.query) sp.set('query', params.query);
     if (params.tag_id) sp.set('tag_id', String(params.tag_id));
     if (params.status) sp.set('status', params.status);
+    if (params.over_cap) sp.set('over_cap', 'true');
+    if (params.domain) sp.set('domain', params.domain);
     const qs = sp.toString();
     return downloadFile(`/api/links/export${qs ? `?${qs}` : ''}`, 'short_links.csv');
   },
