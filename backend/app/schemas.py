@@ -71,8 +71,9 @@ class LinkOut(BaseModel):
     domain_expires_at: dt.datetime | None = None
     domain_checked_at: dt.datetime | None = None
     # The link's own expiry (or "permanent") outlives the domain's known
-    # registration expiry -- possible only for links made before the check
-    # existed, or when a refresh moved the cap earlier. Shown as a warning.
+    # registration expiry. Permanent links are allowed to; explicit dates
+    # past the cap are refused on input, so this only flags permanent ones,
+    # legacy links, or a cap that moved earlier. Shown as a warning.
     exceeds_domain_expiry: bool = False
 
 

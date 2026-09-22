@@ -30,7 +30,7 @@ export type Link = {
   domain_status: DomainStatus | null;
   domain_expires_at: string | null;
   domain_checked_at: string | null;
-  /** 到期日（或永久）超過網域註冊到期日——只會出現在本功能上線前建立的舊短網址，或網域到期日被改早之後 */
+  /** 到期日（或永久有效）超過網域註冊到期日；永久有效不擋只警示，明確填的日期超過則建立時就會被擋 */
   exceeds_domain_expiry: boolean;
 };
 

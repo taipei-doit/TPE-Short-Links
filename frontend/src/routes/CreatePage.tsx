@@ -90,15 +90,8 @@ export function CreatePage() {
 
   const domainCap = domainCapDate(domainInfo);
   const domainLapsed = domainCap !== null && dayjs(domainCap).isBefore(dayjs());
-
-  // 網域有註冊到期日時不能選「永久」：自動切到指定日期，並以網域到期日當預設值
-  // （要更短可自行改）。短網址的到期日是自己的，之後不會跟著網域連動。
-  useEffect(() => {
-    if (!domainCap || domainLapsed) return;
-    if (expiryMode === 'permanent') setExpiryMode('datetime');
-    if (!expiresAt || dayjs(expiresAt).isAfter(dayjs(domainCap))) setExpiresAt(domainCap);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [domainCap?.getTime(), domainLapsed]);
+  // 「永久有效」照常可建，只提醒：網域到期沒續約，短網址會轉向可能已易主的網域。
+  const permanentWarning = expiryMode === 'permanent' && domainCap !== null && !domainLapsed;
 
   const expiryError = useMemo(() => {
     if (expiryMode === 'permanent') return null;
@@ -255,20 +248,30 @@ export function CreatePage() {
             <Select
               label="有效期限"
               data={[
-                { value: 'permanent', label: '永久有效', disabled: domainCap !== null },
+                { value: 'permanent', label: '永久有效' },
                 { value: 'datetime', label: '指定日期／時間' },
               ]}
               value={expiryMode}
               onChange={(v) => setExpiryMode((v as ExpiryMode) ?? 'permanent')}
               description={
                 domainCap
-                  ? `此網域註冊至 ${dayjs(domainCap).format('YYYY-MM-DD')}，短網址不得設為永久或晚於該日`
+                  ? `此網域註冊至 ${dayjs(domainCap).format('YYYY-MM-DD')}，指定的到期時間不得晚於該日`
                   : undefined
               }
               size="md"
               radius="md"
             />
           </Group>
+
+          {permanentWarning ? (
+            <Alert color="orange" variant="light" icon={<IconWorldSearch size={18} />} title="永久有效會超過網域註冊期限">
+              <Text size="sm">
+                網域 {domainInfo?.name} 的註冊有效期至 {dayjs(domainCap).format('YYYY-MM-DD')}。仍可建立，
+                但若該網域到期未續約、被他人搶註，這條短網址會轉向已易主的網站。建議指定不晚於該日的到期時間，
+                或在網域到期前確認續約。
+              </Text>
+            </Alert>
+          ) : null}
 
           {expiryMode === 'datetime' ? (
             <DateTimePicker
@@ -334,6 +337,12 @@ export function CreatePage() {
                 ✓ 短網址建立成功！
               </Title>
               <Text c="dimmed" size="sm">您的短網址已可分享使用</Text>
+              {result.exceeds_domain_expiry && result.domain_expires_at ? (
+                <Text size="sm" mt={4} c="orange.9">
+                  提醒：此短網址為永久有效，但目標網域 {result.domain_name} 的註冊有效期至{' '}
+                  {dayjs(result.domain_expires_at).format('YYYY-MM-DD')}，請留意該網域的續約狀況。
+                </Text>
+              ) : null}
             </div>
             <div
               style={{

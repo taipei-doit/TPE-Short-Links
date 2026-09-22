@@ -65,14 +65,10 @@ function EditExpiryForm({
   onCancel: () => void;
 }) {
   const domainCap = domainCapDate(domainOf(link));
-  // 網域有註冊到期日時不能選「永久」：一開就切到指定日期，預設帶網域到期日。
-  const [mode, setMode] = useState<'permanent' | 'datetime'>(
-    initialExpiresAt || domainCap ? 'datetime' : 'permanent',
-  );
+  const [mode, setMode] = useState<'permanent' | 'datetime'>(initialExpiresAt ? 'datetime' : 'permanent');
+  // 既有到期日若已超過網域上限（舊資料），預設帶網域到期日，省得一開就被擋。
   const [expiresAt, setExpiresAt] = useState<Date | null>(
-    initialExpiresAt && (!domainCap || !dayjs(initialExpiresAt).isAfter(dayjs(domainCap)))
-      ? initialExpiresAt
-      : domainCap,
+    initialExpiresAt && domainCap && dayjs(initialExpiresAt).isAfter(dayjs(domainCap)) ? domainCap : initialExpiresAt,
   );
   const [saving, setSaving] = useState(false);
   const capError =
@@ -84,15 +80,21 @@ function EditExpiryForm({
       <Select
         label="有效期限"
         data={[
-          { value: 'permanent', label: '永久有效', disabled: domainCap !== null },
+          { value: 'permanent', label: '永久有效' },
           { value: 'datetime', label: '指定日期／時間' },
         ]}
         value={mode}
         onChange={(v) => setMode((v as 'permanent' | 'datetime') ?? 'permanent')}
         description={
-          domainCap ? `此網域註冊至 ${dayjs(domainCap).format('YYYY-MM-DD')}，短網址不得設為永久或晚於該日` : undefined
+          domainCap ? `此網域註冊至 ${dayjs(domainCap).format('YYYY-MM-DD')}，指定的到期時間不得晚於該日` : undefined
         }
       />
+      {mode === 'permanent' && domainCap ? (
+        <Text size="sm" c="orange.9">
+          永久有效會超過網域 {link.domain_name} 的註冊有效期（{dayjs(domainCap).format('YYYY-MM-DD')}）。
+          仍可儲存，但該網域到期未續約時，這條短網址會轉向可能已易主的網站。
+        </Text>
+      ) : null}
       {mode === 'datetime' && (
         <DateTimePicker
           label="到期時間"
@@ -115,7 +117,7 @@ function EditExpiryForm({
         </Button>
         <Button
           loading={saving}
-          disabled={!!capError || (mode === 'datetime' && !expiresAt) || (mode === 'permanent' && domainCap !== null)}
+          disabled={!!capError || (mode === 'datetime' && !expiresAt)}
           onClick={async () => {
             setSaving(true);
             await onSave(mode === 'permanent' ? null : expiresAt);
@@ -682,7 +684,7 @@ export function ManagePage() {
                     <Text size="sm">{l.expires_at ? dayjs(l.expires_at).format('YYYY-MM-DD HH:mm') : '永久有效'}</Text>
                     {l.exceeds_domain_expiry ? (
                       <Tooltip
-                        label="有效期限超過目標網域的註冊到期日（本功能上線前建立的短網址）。網域到期若未續約，這條短網址會轉向已易主的網域，請改為不晚於網域到期日"
+                        label="有效期限（或永久有效）超過目標網域的註冊到期日。網域到期若未續約，這條短網址會轉向可能已易主的網站，請留意該網域的續約狀況"
                         withArrow
                         multiline
                         maw={320}

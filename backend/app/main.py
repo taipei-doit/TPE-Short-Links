@@ -195,6 +195,7 @@ def domain_to_out(domain: Domain) -> DomainOut:
 # 印出去的 QR Code 與已發布的短網址就會全部轉到別人手上。
 # 這只是輸入時的防呆：短網址的到期日是它自己的，不隨網域連動、不自動延長；
 # 網域續約後「刷新」只是把後台記錄的上限往後推，要延長短網址仍須手動改。
+# 「永久有效」不擋、只警示（列表標記 exceeds_domain_expiry）。
 _TAIPEI_TZ = dt.timezone(dt.timedelta(hours=8))
 
 
@@ -256,14 +257,15 @@ def _exceeds_cap(expires_at: dt.datetime | None, cap: dt.datetime | None) -> boo
 
 
 def enforce_domain_cap(requested: dt.datetime | None, domain: Domain | None) -> None:
-    """Refuse an expiry that would outlive the domain's registration.
+    """Refuse an explicit expiry that would outlive the domain's registration.
 
-    Permanent (None) counts as outliving it whenever the registration expiry
-    is known: the caller must pick a date on or before it. Registries that
-    publish no expiry impose nothing.
+    "Permanent" (None) is allowed on purpose -- the UI shows a warning and
+    the list flags the link -- because plenty of agency targets are meant to
+    live as long as the domain does. Registries that publish no expiry
+    impose nothing.
     """
     cap = domain_cap(domain)
-    if cap is None:
+    if cap is None or requested is None:
         return
     assert domain is not None
     if cap <= now_utc():
@@ -272,14 +274,6 @@ def enforce_domain_cap(requested: dt.datetime | None, domain: Domain | None) -> 
             detail=(
                 f"網域 {domain.name} 的註冊已於 {_fmt_taipei(cap)} 到期，短網址不得指向可能已易主的網域；"
                 "若該網域已續約，請刷新網域資訊後再試"
-            ),
-        )
-    if requested is None:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"網域 {domain.name} 的註冊有效期至 {_fmt_taipei(cap)}，短網址不得設為永久有效，"
-                "請指定不晚於該日的到期時間"
             ),
         )
     if requested > cap:

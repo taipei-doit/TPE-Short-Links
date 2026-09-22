@@ -1,7 +1,8 @@
-"""Domain registration expiry guard: a link may not be set to outlive its domain.
+"""Domain registration expiry guard: an explicit expiry may not outlive the domain.
 
 The guard acts on input only. A link's expiry is its own -- never moved by a
 lookup or a refresh -- so renewing a domain raises the cap and nothing else.
+"Permanent" is allowed and merely flagged.
 """
 
 from __future__ import annotations
@@ -88,12 +89,14 @@ def test_expiry_past_domain_cap_is_refused(client: TestClient, monkeypatch):
     assert "網域註冊有效期" in res.json()["detail"]
 
 
-def test_permanent_is_refused_when_domain_expiry_known(client: TestClient, monkeypatch):
+def test_permanent_is_allowed_but_flagged(client: TestClient, monkeypatch):
     use_domains(monkeypatch, {"example.com": ("ok", days(400))})
 
     res = create(client, "https://example.com/forever", "DOM03")
-    assert res.status_code == 422
-    assert "不得設為永久有效" in res.json()["detail"]
+    assert res.status_code == 200, res.text
+    assert res.json()["expires_at"] is None
+    # The UI turns this into a warning; creation itself is never blocked.
+    assert res.json()["exceeds_domain_expiry"] is True
 
 
 def test_unknown_domain_imposes_no_cap(client: TestClient):
@@ -183,7 +186,11 @@ def test_patch_expiry_respects_domain_cap(client: TestClient, monkeypatch):
     create(client, "https://patch.example/", "DOM10", days(10))
 
     assert client.patch("/api/links/DOM10", json={"expires_at": days(120).isoformat()}).status_code == 422
-    assert client.patch("/api/links/DOM10", json={"expires_at": None}).status_code == 422
+
+    # Permanent passes, flagged for the list.
+    res = client.patch("/api/links/DOM10", json={"expires_at": None})
+    assert res.status_code == 200, res.text
+    assert res.json()["exceeds_domain_expiry"] is True
 
     res = client.patch("/api/links/DOM10", json={"expires_at": days(60).isoformat()})
     assert res.status_code == 200, res.text
@@ -194,13 +201,13 @@ def test_url_change_must_pass_new_domain_cap(client: TestClient, monkeypatch):
     cap = days(60)
     use_domains(monkeypatch, {"capped.example": ("ok", cap)})
 
-    # A permanent link cannot simply be pointed at a domain with a known expiry.
+    # A permanent link may move onto a domain with a known expiry; it gets flagged.
     create(client, "https://open.example/", "DOM11")
     res = client.patch("/api/links/DOM11", json={"original_url": "https://capped.example/new"})
-    assert res.status_code == 422
-    assert "永久" in res.json()["detail"]
+    assert res.status_code == 200, res.text
+    assert res.json()["exceeds_domain_expiry"] is True
 
-    # Nor can one whose own date overshoots it; shorten first, then move.
+    # One whose own date overshoots it cannot; shorten first, then move.
     create(client, "https://open.example/2", "DOM12", days(365))
     res = client.patch("/api/links/DOM12", json={"original_url": "https://capped.example/2"})
     assert res.status_code == 422
