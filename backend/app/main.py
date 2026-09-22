@@ -29,8 +29,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_firebase_user, invalidate_admin_cache
 from app.db.session import get_db
+from app.domains import STATUS_ERROR, STATUS_OK, lookup_domain, registrable_domain
 from app.files import router as files_router
-from app.models import AdminUser, BlockedWord, FileShare, ReservedCode, ShortLink, Tag
+from app.models import AdminUser, BlockedWord, Domain, FileShare, ReservedCode, ShortLink, Tag
 from app.pages import NOT_FOUND_HTML, redirect_to_not_found
 from app.pins import verify_pin
 from app.schemas import (
@@ -40,6 +41,8 @@ from app.schemas import (
     BlockedWordOut,
     BlockedWordToggleIn,
     DisableOut,
+    DomainOut,
+    DomainRefreshOut,
     EnableOut,
     LinkCreateIn,
     LinkListOut,
@@ -151,7 +154,7 @@ def sync_seed_tags(db: Session) -> None:
             raise
 
 
-def link_to_out(link: ShortLink, tag_name: str) -> LinkOut:
+def link_to_out(link: ShortLink, tag_name: str, domain: Domain | None = None) -> LinkOut:
     settings = get_settings()
     expires_at = as_utc(link.expires_at)
     is_expired = expires_at is not None and expires_at <= now_utc()
@@ -169,7 +172,139 @@ def link_to_out(link: ShortLink, tag_name: str) -> LinkOut:
         short_url=f"{settings.PUBLIC_BASE_URL.rstrip('/')}/{link.code}",
         click_count=link.click_count,
         qr_pin=link.qr_pin,
+        domain_name=link.domain_name,
+        domain_status=domain.status if domain is not None else None,
+        domain_expires_at=as_utc(domain.expires_at) if domain is not None else None,
+        domain_checked_at=as_utc(domain.checked_at) if domain is not None else None,
+        exceeds_domain_expiry=_exceeds_cap(expires_at, domain_cap(domain)),
     )
+
+
+def domain_to_out(domain: Domain) -> DomainOut:
+    return DomainOut(
+        name=domain.name,
+        status=domain.status,
+        expires_at=as_utc(domain.expires_at),
+        checked_at=as_utc(domain.checked_at),
+        detail=domain.detail,
+    )
+
+
+# ---- 網域註冊有效期防呆 ----
+# 短網址的有效期不得超過目標網域的註冊有效期：網域一旦過期被他人搶註，
+# 印出去的 QR Code 與已發布的短網址就會全部轉到別人手上。
+# 這只是輸入時的防呆：短網址的到期日是它自己的，不隨網域連動、不自動延長；
+# 網域續約後「刷新」只是把後台記錄的上限往後推，要延長短網址仍須手動改。
+_TAIPEI_TZ = dt.timezone(dt.timedelta(hours=8))
+
+
+def _fmt_taipei(value: dt.datetime) -> str:
+    return as_utc(value).astimezone(_TAIPEI_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def _domain_check_is_fresh(domain: Domain) -> bool:
+    settings = get_settings()
+    hours = 1 if domain.status == STATUS_ERROR else settings.DOMAIN_CHECK_TTL_HOURS
+    checked = as_utc(domain.checked_at)
+    return checked is not None and now_utc() - checked < dt.timedelta(hours=hours)
+
+
+def ensure_domain(db: Session, url: str, *, force: bool = False) -> Domain | None:
+    """The Domain row for a target URL, looked up via RDAP when missing or stale.
+
+    None when the URL has no registrable domain (IP literal etc.). Adds to the
+    session but does not commit. A transient lookup failure never erases an
+    expiry that was found earlier: a stale cap is the conservative outcome.
+    """
+    host = urlparse(url).hostname
+    name = registrable_domain(host)
+    if name is None:
+        return None
+    domain = db.get(Domain, name)
+    if domain is not None and not force and _domain_check_is_fresh(domain):
+        return domain
+    result = lookup_domain(host)
+    if domain is None:
+        domain = Domain(name=name)
+        db.add(domain)
+    if result.status == STATUS_ERROR and domain.status == STATUS_OK:
+        domain.detail = f"重新查詢失敗（{result.detail}），沿用先前查得的到期日"[:255]
+    else:
+        domain.status = result.status
+        domain.expires_at = result.expires_at
+        domain.detail = result.detail[:255]
+        domain.source = result.source[:255]
+    domain.checked_at = now_utc()
+    # Flushed at once so a policy error raised right after (422) cannot leave
+    # a second copy of the row pending in the same session.
+    db.flush()
+    return domain
+
+
+def domain_cap(domain: Domain | None) -> dt.datetime | None:
+    """The latest moment a link into this domain may stay valid, if known."""
+    if domain is None or domain.status != STATUS_OK:
+        return None
+    return as_utc(domain.expires_at)
+
+
+def _exceeds_cap(expires_at: dt.datetime | None, cap: dt.datetime | None) -> bool:
+    """Does this expiry (None = permanent) outlive the domain's registration?"""
+    if cap is None:
+        return False
+    return expires_at is None or as_utc(expires_at) > cap
+
+
+def enforce_domain_cap(requested: dt.datetime | None, domain: Domain | None) -> None:
+    """Refuse an expiry that would outlive the domain's registration.
+
+    Permanent (None) counts as outliving it whenever the registration expiry
+    is known: the caller must pick a date on or before it. Registries that
+    publish no expiry impose nothing.
+    """
+    cap = domain_cap(domain)
+    if cap is None:
+        return
+    assert domain is not None
+    if cap <= now_utc():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"網域 {domain.name} 的註冊已於 {_fmt_taipei(cap)} 到期，短網址不得指向可能已易主的網域；"
+                "若該網域已續約，請刷新網域資訊後再試"
+            ),
+        )
+    if requested is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"網域 {domain.name} 的註冊有效期至 {_fmt_taipei(cap)}，短網址不得設為永久有效，"
+                "請指定不晚於該日的到期時間"
+            ),
+        )
+    if requested > cap:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"短網址有效期不得晚於網域註冊有效期：{domain.name} 至 {_fmt_taipei(cap)}；"
+                "若該網域已續約，請先刷新網域資訊"
+            ),
+        )
+
+
+def count_links_over_cap(db: Session, domain: Domain) -> int:
+    """Links on this domain whose expiry (or permanence) outlives its registration."""
+    cap = domain_cap(domain)
+    if cap is None:
+        return 0
+    return db.execute(
+        select(func.count())
+        .select_from(ShortLink)
+        .where(
+            ShortLink.domain_name == domain.name,
+            or_(ShortLink.expires_at.is_(None), ShortLink.expires_at > cap),
+        )
+    ).scalar_one()
 
 
 @app.get("/api/tags", response_model=list[TagOut])
@@ -276,6 +411,12 @@ def create_link(
         if code is None:
             raise HTTPException(status_code=500, detail="Failed to generate a unique code")
 
+    # 網域註冊有效期：查（或沿用一天內的查詢結果），再據以決定實際到期時間。
+    # 查詢結果先入庫：就算這次建立被政策擋下，下一次也不必再問一次 RDAP。
+    domain = ensure_domain(db, str(payload.original_url))
+    db.commit()
+    enforce_domain_cap(payload.expires_at, domain)
+
     link = ShortLink(
         code=code,
         original_url=str(payload.original_url),
@@ -284,6 +425,7 @@ def create_link(
         note=payload.note,
         status="active",
         click_count=0,
+        domain_name=domain.name if domain is not None else None,
     )
     db.add(link)
     try:
@@ -292,7 +434,7 @@ def create_link(
         db.rollback()
         raise HTTPException(status_code=422, detail="Code already exists")
     db.refresh(link)
-    return link_to_out(link, tag.name)
+    return link_to_out(link, tag.name, domain)
 
 
 @app.get("/api/links", response_model=LinkListOut)
@@ -309,7 +451,11 @@ def list_links(
 ) -> LinkListOut:
     now = now_utc()
 
-    base = select(ShortLink, Tag.name).join(Tag, Tag.id == ShortLink.tag_id)
+    base = (
+        select(ShortLink, Tag.name, Domain)
+        .join(Tag, Tag.id == ShortLink.tag_id)
+        .outerjoin(Domain, Domain.name == ShortLink.domain_name)
+    )
     where = []
 
     if query:
@@ -349,7 +495,7 @@ def list_links(
         db.execute(base.order_by(order_by, ShortLink.id.desc()).limit(limit).offset(offset))
         .all()
     )
-    items = [link_to_out(link, tag_name) for (link, tag_name) in rows]
+    items = [link_to_out(link, tag_name, domain) for (link, tag_name, domain) in rows]
     return LinkListOut(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -365,7 +511,11 @@ def export_links_csv(
     settings = get_settings()
     now = now_utc()
 
-    base = select(ShortLink, Tag.name).join(Tag, Tag.id == ShortLink.tag_id)
+    base = (
+        select(ShortLink, Tag.name, Domain)
+        .join(Tag, Tag.id == ShortLink.tag_id)
+        .outerjoin(Domain, Domain.name == ShortLink.domain_name)
+    )
     where = []
 
     if query:
@@ -409,13 +559,18 @@ def export_links_csv(
             "expires_at",
             "note",
             "click_count",
+            "domain_name",
+            "domain_status",
+            "domain_expires_at",
+            "exceeds_domain_expiry",
         ]
     )
 
-    for link, tag_name in rows:
+    for link, tag_name, domain in rows:
         expires_at = as_utc(link.expires_at)
         is_expired = expires_at is not None and expires_at <= now
         short_url = f"{settings.PUBLIC_BASE_URL.rstrip('/')}/{link.code}"
+        domain_expires_at = as_utc(domain.expires_at) if domain is not None else None
         writer.writerow(
             [
                 link.id,
@@ -430,6 +585,10 @@ def export_links_csv(
                 expires_at.isoformat() if expires_at is not None else "",
                 (link.note or "").replace("\n", " ").replace("\r", " "),
                 link.click_count,
+                link.domain_name or "",
+                domain.status if domain is not None else "",
+                domain_expires_at.isoformat() if domain_expires_at is not None else "",
+                "true" if _exceeds_cap(expires_at, domain_cap(domain)) else "false",
             ]
         )
 
@@ -1054,6 +1213,8 @@ def update_link(
         raise HTTPException(status_code=422, detail="Cannot modify a disabled link; enable it first")
 
     fields = payload.model_fields_set
+    domain = db.get(Domain, link.domain_name) if link.domain_name else None
+    url_changed = False
 
     if "original_url" in fields:
         if payload.original_url is None:
@@ -1080,19 +1241,84 @@ def update_link(
                 status_code=409,
                 detail=f"此網址已建立過短網址：{existing.short_url}",
             )
+        url_changed = new_url != link.original_url
         link.original_url = new_url
+        if url_changed:
+            domain = ensure_domain(db, new_url)
+            link.domain_name = domain.name if domain is not None else None
 
     if "expires_at" in fields:
         if payload.expires_at is not None and payload.expires_at.tzinfo is None:
             raise HTTPException(status_code=422, detail="expires_at must be timezone-aware")
+        enforce_domain_cap(payload.expires_at, domain)
         link.expires_at = payload.expires_at
+    elif url_changed:
+        # 換到別的網域時，現有的到期日（或永久）也得過新網域的關；不合就擋下，
+        # 由管理員先把有效期限改到新網域的註冊期限內再換網址。
+        enforce_domain_cap(as_utc(link.expires_at), domain)
 
     db.add(link)
     db.commit()
     db.refresh(link)
     tag = db.get(Tag, link.tag_id)
     assert tag is not None
-    return link_to_out(link, tag.name)
+    return link_to_out(link, tag.name, domain)
+
+
+@app.get("/api/domains/lookup", response_model=DomainOut)
+def lookup_domain_for_url(
+    url: str = Query(..., min_length=1, max_length=2048),
+    refresh: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> DomainOut:
+    """建立頁預查：這個目標網址的網域註冊到什麼時候？結果與建立時用的相同（同一份快取）。"""
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=422, detail="url must be an absolute http(s) URL")
+    domain = ensure_domain(db, url.strip(), force=refresh)
+    if domain is None:
+        return DomainOut(
+            name=None,
+            status="not_applicable",
+            expires_at=None,
+            checked_at=None,
+            detail="IP 位址或無法辨識的主機名稱，不適用網域註冊查詢",
+        )
+    db.commit()
+    return domain_to_out(domain)
+
+
+@app.post("/api/links/{code}/refresh-domain", response_model=DomainRefreshOut)
+def refresh_link_domain(
+    code: str = Path(..., min_length=1, max_length=32),
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> DomainRefreshOut:
+    """重新查詢這條短網址目標網域的註冊有效期（同網域共用一筆記錄）。
+
+    只更新後台記錄的上限，不動任何短網址的到期日：網域續約後要延長短網址，
+    仍由管理員手動修改。也用來補查本功能上線前建立、尚未登記網域的舊短網址。
+    """
+    if is_reserved(code, db):
+        raise HTTPException(status_code=404, detail="Not found")
+    link = db.execute(select(ShortLink).where(ShortLink.code == code)).scalar_one_or_none()
+    if link is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    domain = ensure_domain(db, link.original_url, force=True)
+    if domain is None:
+        raise HTTPException(status_code=422, detail="此網址為 IP 位址或無法辨識的主機名稱，不適用網域註冊查詢")
+    link.domain_name = domain.name
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+    tag = db.get(Tag, link.tag_id)
+    assert tag is not None
+    return DomainRefreshOut(
+        domain=domain_to_out(domain),
+        over_cap_links=count_links_over_cap(db, domain),
+        link=link_to_out(link, tag.name, domain),
+    )
 
 
 # Must be declared before the catch-all /{code} route so "404.html" is never

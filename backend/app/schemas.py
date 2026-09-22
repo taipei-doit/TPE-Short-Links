@@ -65,6 +65,32 @@ class LinkOut(BaseModel):
     # Shown to admins so they can relay it to the owning agency; the public
     # QR studio requires it before unlocking.
     qr_pin: str
+    # Registration state of the target's domain (None until first checked).
+    domain_name: str | None = None
+    domain_status: str | None = None
+    domain_expires_at: dt.datetime | None = None
+    domain_checked_at: dt.datetime | None = None
+    # The link's own expiry (or "permanent") outlives the domain's known
+    # registration expiry -- possible only for links made before the check
+    # existed, or when a refresh moved the cap earlier. Shown as a warning.
+    exceeds_domain_expiry: bool = False
+
+
+class DomainOut(BaseModel):
+    """Registration expiry of one registrable domain (see app/domains.py)."""
+
+    name: str | None
+    status: str  # ok | unknown | error | not_applicable
+    expires_at: dt.datetime | None
+    checked_at: dt.datetime | None
+    detail: str
+
+
+class DomainRefreshOut(BaseModel):
+    domain: DomainOut
+    # Links on that domain whose expiry now outlives the registration.
+    over_cap_links: int
+    link: LinkOut
 
 
 class QrUnlockIn(BaseModel):

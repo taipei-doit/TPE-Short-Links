@@ -22,3 +22,8 @@ python-multipart>=0.0.18
 # and never needs the whole archive in memory or on disk.
 zipstream-ng>=1.8.0
 requests>=2.28.0
+# Domain registration expiry via RDAP (app/domains.py). httpx with HTTP/2
+# because TWNIC's .tw RDAP server refuses HTTP/1.1 clients (426);
+# publicsuffixlist finds the registrable domain (gov.taipei, not doit.gov.taipei).
+httpx[http2]>=0.28.0
+publicsuffixlist>=1.0

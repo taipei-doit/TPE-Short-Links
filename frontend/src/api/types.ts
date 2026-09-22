@@ -25,6 +25,31 @@ export type Link = {
   click_count: number;
   /** QR 產生器的 4 碼解鎖 PIN，管理員轉知局處用 */
   qr_pin: string;
+  /** 目標網址的可註冊網域（gov.taipei 而非 doit.gov.taipei）；未查詢過為 null */
+  domain_name: string | null;
+  domain_status: DomainStatus | null;
+  domain_expires_at: string | null;
+  domain_checked_at: string | null;
+  /** 到期日（或永久）超過網域註冊到期日——只會出現在本功能上線前建立的舊短網址，或網域到期日被改早之後 */
+  exceeds_domain_expiry: boolean;
+};
+
+/** ok＝查到到期日；unknown＝註冊機構不公開（gov.tw 等）；error＝暫時查不到；not_applicable＝IP 位址等 */
+export type DomainStatus = 'ok' | 'unknown' | 'error' | 'not_applicable';
+
+export type DomainInfo = {
+  name: string | null;
+  status: DomainStatus;
+  expires_at: string | null;
+  checked_at: string | null;
+  detail: string;
+};
+
+export type DomainRefreshResult = {
+  domain: DomainInfo;
+  /** 同網域中到期日超過註冊期限的短網址數（只提醒，不會被改） */
+  over_cap_links: number;
+  link: Link;
 };
 
 export type LinkList = {

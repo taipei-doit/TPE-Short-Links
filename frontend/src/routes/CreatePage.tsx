@@ -1,15 +1,16 @@
-import { Button, Card, Checkbox, CopyButton, Group, Select, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
-import { IconQrcode } from '@tabler/icons-react';
+import { Alert, Button, Card, Checkbox, CopyButton, Group, Select, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { IconQrcode, IconWorldSearch } from '@tabler/icons-react';
 import { DateTimePicker } from '@mantine/dates';
 import '@mantine/dates/styles.css';
 import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
 import dayjs from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { DomainStatusLine, domainCapDate } from '../components/DomainStatus';
 import { QrCodeDialog } from '../components/QrCodeDialog';
 import { api } from '../api/client';
-import type { CreateLinkIn, Link, Tag } from '../api/types';
+import type { CreateLinkIn, DomainInfo, Link, Tag } from '../api/types';
 
 type ExpiryMode = 'permanent' | 'datetime';
 
@@ -52,14 +53,64 @@ export function CreatePage() {
     }
   }, [originalUrl]);
 
+  // 網域註冊有效期預查：網址一有效就查（停止輸入 500ms 後），
+  // 讓「有效期限」欄位在送出前就知道上限，而不是送出後才被後端擋。
+  const [domainInfo, setDomainInfo] = useState<DomainInfo | null>(null);
+  const [domainLoading, setDomainLoading] = useState(false);
+  const domainSeq = useRef(0);
+  const validUrl = originalUrlError ? null : originalUrl.trim();
+
+  async function lookupDomain(url: string, refresh = false) {
+    const seq = ++domainSeq.current;
+    setDomainLoading(true);
+    try {
+      const info = await api.lookupDomain(url, refresh);
+      if (seq === domainSeq.current) setDomainInfo(info);
+    } catch (e) {
+      if (seq === domainSeq.current) {
+        setDomainInfo(null);
+        notifications.show({ color: 'orange', message: e instanceof Error ? e.message : '網域查詢失敗' });
+      }
+    } finally {
+      if (seq === domainSeq.current) setDomainLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!validUrl) {
+      domainSeq.current++;
+      setDomainInfo(null);
+      setDomainLoading(false);
+      return;
+    }
+    const t = setTimeout(() => lookupDomain(validUrl), 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validUrl]);
+
+  const domainCap = domainCapDate(domainInfo);
+  const domainLapsed = domainCap !== null && dayjs(domainCap).isBefore(dayjs());
+
+  // 網域有註冊到期日時不能選「永久」：自動切到指定日期，並以網域到期日當預設值
+  // （要更短可自行改）。短網址的到期日是自己的，之後不會跟著網域連動。
+  useEffect(() => {
+    if (!domainCap || domainLapsed) return;
+    if (expiryMode === 'permanent') setExpiryMode('datetime');
+    if (!expiresAt || dayjs(expiresAt).isAfter(dayjs(domainCap))) setExpiresAt(domainCap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domainCap?.getTime(), domainLapsed]);
+
   const expiryError = useMemo(() => {
     if (expiryMode === 'permanent') return null;
     if (!expiresAt) return '請選擇到期日期／時間';
     if (dayjs(expiresAt).isBefore(dayjs())) return '到期時間必須晚於現在';
+    if (domainCap && dayjs(expiresAt).isAfter(dayjs(domainCap))) {
+      return `到期時間不得晚於網域註冊有效期（${dayjs(domainCap).format('YYYY-MM-DD HH:mm')}）`;
+    }
     return null;
-  }, [expiryMode, expiresAt]);
+  }, [expiryMode, expiresAt, domainCap]);
 
-  const canSubmit = !originalUrlError && !!tagId && !expiryError && !loading;
+  const canSubmit = !originalUrlError && !!tagId && !expiryError && !loading && !domainLoading && !domainLapsed;
 
   async function onSubmit() {
     setTagTouched(true);
@@ -143,6 +194,28 @@ export function CreatePage() {
             radius="md"
           />
 
+          {validUrl ? (
+            domainLoading ? (
+              <Text size="xs" c="dimmed">
+                查詢網域註冊有效期中…
+              </Text>
+            ) : domainLapsed ? (
+              <Alert color="red" variant="light" icon={<IconWorldSearch size={18} />} title="網域註冊已到期">
+                <Stack gap="xs">
+                  <Text size="sm">
+                    網域 {domainInfo?.name} 的註冊已於 {dayjs(domainCap).format('YYYY-MM-DD')} 到期。
+                    到期的網域可能被他人搶註，短網址不得指向它；若該網域已續約，請重新查詢。
+                  </Text>
+                  <Button size="xs" variant="light" color="red" w="fit-content" onClick={() => lookupDomain(validUrl, true)}>
+                    重新查詢
+                  </Button>
+                </Stack>
+              </Alert>
+            ) : (
+              <DomainStatusLine domain={domainInfo} size="sm" onRefresh={() => lookupDomain(validUrl, true)} />
+            )
+          ) : null}
+
           <Checkbox
             label="使用自訂代碼（手動輸入）"
             checked={useManualCode}
@@ -182,11 +255,16 @@ export function CreatePage() {
             <Select
               label="有效期限"
               data={[
-                { value: 'permanent', label: '永久有效' },
+                { value: 'permanent', label: '永久有效', disabled: domainCap !== null },
                 { value: 'datetime', label: '指定日期／時間' },
               ]}
               value={expiryMode}
               onChange={(v) => setExpiryMode((v as ExpiryMode) ?? 'permanent')}
+              description={
+                domainCap
+                  ? `此網域註冊至 ${dayjs(domainCap).format('YYYY-MM-DD')}，短網址不得設為永久或晚於該日`
+                  : undefined
+              }
               size="md"
               radius="md"
             />
@@ -199,6 +277,8 @@ export function CreatePage() {
               onChange={setExpiresAt}
               error={expiryError}
               minDate={new Date()}
+              maxDate={domainCap ?? undefined}
+              description={domainCap ? `不得晚於網域註冊有效期 ${dayjs(domainCap).format('YYYY-MM-DD HH:mm')}` : undefined}
               size="md"
               radius="md"
             />

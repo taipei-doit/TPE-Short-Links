@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     FILE_PIN_MAX_ATTEMPTS: int = 5
     FILE_PIN_LOCKOUT_MINUTES: int = 15
 
+    # --- Domain registration checks (app/domains.py) ---
+    # A domain's RDAP result is reused for this long before creating another
+    # link to it triggers a new lookup. Manual refresh always re-queries.
+    DOMAIN_CHECK_TTL_HOURS: int = 24
+
     def reserved_codes_set(self) -> set[str]:
         raw = (self.RESERVED_CODES or "").strip()
         codes = {c.strip() for c in raw.split(",") if c.strip()} if raw else set()

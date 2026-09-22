@@ -1,6 +1,8 @@
 import type {
   Admin,
   CreateLinkIn,
+  DomainInfo,
+  DomainRefreshResult,
   FileShare,
   FileShareCreated,
   FileShareList,
@@ -234,6 +236,16 @@ export const api = {
   },
   downloadQrCode: (code: string) =>
     downloadFile(`/api/links/${encodeURIComponent(code)}/qrcode`, `qrcode_${code}.png`),
+  /** 建立頁預查目標網域的註冊有效期（一天內沿用快取；refresh 強制重查）。 */
+  lookupDomain: (url: string, refresh = false) =>
+    apiFetch<DomainInfo>(
+      `/api/domains/lookup?url=${encodeURIComponent(url)}${refresh ? '&refresh=true' : ''}`,
+    ),
+  /** 重查這條短網址目標網域的註冊有效期（只更新後台記錄的上限，不動任何短網址的到期日）。 */
+  refreshLinkDomain: (code: string) =>
+    apiFetch<DomainRefreshResult>(`/api/links/${encodeURIComponent(code)}/refresh-domain`, {
+      method: 'POST',
+    }),
   /** 公開端點，QR 產生器用來提醒代碼打錯或已失效；target 可為 "CODE" 或 "f/CODE"。 */
   getQrStatus: (target: string) => apiFetch<{ state: string }>(`/api/qr-status/${target}`),
   /** 公開端點：以 PIN 解鎖 QR 產生器，成功時取得市徽向量。 */

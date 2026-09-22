@@ -53,8 +53,37 @@ class ShortLink(Base):
     qr_pin: Mapped[str] = mapped_column(String(4), nullable=False, default=generate_qr_pin, server_default="0000")
     qr_pin_failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     qr_pin_locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Registrable domain of original_url (see app/domains.py), joined to the
+    # `domains` table. NULL for links created before domain checks existed
+    # (until refreshed) and for targets without a domain (IP literals).
+    domain_name: Mapped[str | None] = mapped_column(String(253), nullable=True, index=True)
 
     tag: Mapped[Tag] = relationship(back_populates="links")
+
+
+class Domain(Base):
+    """Registration-expiry record for one registrable domain.
+
+    One row per domain, shared by every link pointing into it, so "the agency
+    renewed gov.taipei" is one refresh -- not one per link. Only status ``ok``
+    carries an expiry and therefore a cap on link lifetimes; the other
+    statuses (see app/domains.py) impose nothing.
+
+    The cap is a guard on input only: a link's expires_at is never moved by
+    a domain lookup. Renewing a domain raises the cap, then whoever needs a
+    longer-lived link extends it by hand.
+    """
+
+    __tablename__ = "domains"
+
+    name: Mapped[str] = mapped_column(String(253), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="unknown")
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Human-readable outcome of the last lookup (which registry, or why none).
+    detail: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
+    source: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class BlockedWord(Base):

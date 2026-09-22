@@ -36,11 +36,22 @@ import dayjs from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { DomainStatusLine, domainCapDate } from '../components/DomainStatus';
 import { QrCodeDialog } from '../components/QrCodeDialog';
 import { api } from '../api/client';
 import type { Link, Tag } from '../api/types';
 
 type StatusFilter = 'active' | 'disabled' | 'expired' | 'all';
+
+/** 列表裡的短網址本身就帶著網域狀態，直接餵給網域狀態元件。 */
+function domainOf(link: Link) {
+  return {
+    name: link.domain_name,
+    status: link.domain_status,
+    expires_at: link.domain_expires_at,
+    checked_at: link.domain_checked_at,
+  };
+}
 
 function EditExpiryForm({
   link,
@@ -53,33 +64,58 @@ function EditExpiryForm({
   onSave: (expiresAt: Date | null) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [mode, setMode] = useState<'permanent' | 'datetime'>(initialExpiresAt ? 'datetime' : 'permanent');
-  const [expiresAt, setExpiresAt] = useState<Date | null>(initialExpiresAt);
+  const domainCap = domainCapDate(domainOf(link));
+  // 網域有註冊到期日時不能選「永久」：一開就切到指定日期，預設帶網域到期日。
+  const [mode, setMode] = useState<'permanent' | 'datetime'>(
+    initialExpiresAt || domainCap ? 'datetime' : 'permanent',
+  );
+  const [expiresAt, setExpiresAt] = useState<Date | null>(
+    initialExpiresAt && (!domainCap || !dayjs(initialExpiresAt).isAfter(dayjs(domainCap)))
+      ? initialExpiresAt
+      : domainCap,
+  );
   const [saving, setSaving] = useState(false);
+  const capError =
+    mode === 'datetime' && expiresAt && domainCap && dayjs(expiresAt).isAfter(dayjs(domainCap))
+      ? `到期時間不得晚於網域註冊有效期（${dayjs(domainCap).format('YYYY-MM-DD HH:mm')}）`
+      : null;
   return (
     <Stack gap="md">
       <Select
         label="有效期限"
         data={[
-          { value: 'permanent', label: '永久有效' },
+          { value: 'permanent', label: '永久有效', disabled: domainCap !== null },
           { value: 'datetime', label: '指定日期／時間' },
         ]}
         value={mode}
         onChange={(v) => setMode((v as 'permanent' | 'datetime') ?? 'permanent')}
+        description={
+          domainCap ? `此網域註冊至 ${dayjs(domainCap).format('YYYY-MM-DD')}，短網址不得設為永久或晚於該日` : undefined
+        }
       />
       {mode === 'datetime' && (
         <DateTimePicker
           label="到期時間"
           value={expiresAt}
           onChange={setExpiresAt}
+          maxDate={domainCap ?? undefined}
+          error={capError}
+          description={domainCap ? `不得晚於網域註冊有效期 ${dayjs(domainCap).format('YYYY-MM-DD HH:mm')}` : undefined}
         />
       )}
+      <DomainStatusLine domain={domainOf(link)} />
+      {domainCap ? (
+        <Text size="xs" c="dimmed">
+          網域續約後請先在列表按「重新查詢網域」更新上限，再回來延長到期時間。
+        </Text>
+      ) : null}
       <Group justify="flex-end" gap="sm">
         <Button variant="default" onClick={onCancel}>
           取消
         </Button>
         <Button
           loading={saving}
+          disabled={!!capError || (mode === 'datetime' && !expiresAt) || (mode === 'permanent' && domainCap !== null)}
           onClick={async () => {
             setSaving(true);
             await onSave(mode === 'permanent' ? null : expiresAt);
@@ -150,8 +186,18 @@ function EditUrlForm({
   );
 }
 
-/** 原始網址欄：網域放大、全網址縮小，滑過看完整內容——不必再冒險開編輯視窗。 */
-function TargetCell({ url }: { url: string }) {
+/** 原始網址欄：網域放大、全網址縮小，滑過看完整內容——不必再冒險開編輯視窗。
+ *  下方多一行網域註冊有效期與刷新鈕（網域續約後按一下，同網域的短網址一起延長）。 */
+function TargetCell({
+  link,
+  onRefreshDomain,
+  refreshing,
+}: {
+  link: Link;
+  onRefreshDomain: () => void;
+  refreshing: boolean;
+}) {
+  const url = link.original_url;
   let host = url;
   try {
     host = new URL(url).hostname;
@@ -159,16 +205,19 @@ function TargetCell({ url }: { url: string }) {
     // 非標準網址就原樣顯示
   }
   return (
-    <Tooltip label={url} withArrow multiline maw={480} position="top-start">
-      <div>
-        <Text size="sm" fw={600}>
-          {host}
-        </Text>
-        <Text size="xs" c="dimmed" lineClamp={1} style={{ wordBreak: 'break-all' }}>
-          {url}
-        </Text>
-      </div>
-    </Tooltip>
+    <div>
+      <Tooltip label={url} withArrow multiline maw={480} position="top-start">
+        <div>
+          <Text size="sm" fw={600}>
+            {host}
+          </Text>
+          <Text size="xs" c="dimmed" lineClamp={1} style={{ wordBreak: 'break-all' }}>
+            {url}
+          </Text>
+        </div>
+      </Tooltip>
+      <DomainStatusLine domain={domainOf(link)} onRefresh={onRefreshDomain} refreshing={refreshing} />
+    </div>
   );
 }
 
@@ -324,6 +373,36 @@ export function ManagePage() {
         }
       },
     });
+  }
+
+  // 重查網域註冊有效期；一次只讓一列轉圈。
+  const [refreshingCode, setRefreshingCode] = useState<string | null>(null);
+
+  async function refreshDomain(l: Link) {
+    setRefreshingCode(l.code);
+    try {
+      const res = await api.refreshLinkDomain(l.code);
+      const d = res.domain;
+      const state =
+        d.status === 'ok'
+          ? `註冊至 ${dayjs(d.expires_at).format('YYYY-MM-DD')}`
+          : d.status === 'unknown'
+            ? '註冊機構未公開到期日'
+            : d.status === 'error'
+              ? '暫時查不到註冊資料'
+              : '不適用';
+      notifications.show({
+        color: d.status === 'error' || res.over_cap_links > 0 ? 'orange' : 'green',
+        message:
+          `網域 ${d.name}：${state}` +
+          (res.over_cap_links > 0 ? `；有 ${res.over_cap_links} 筆短網址的有效期限超過網域註冊期限，請個別調整` : ''),
+      });
+      load();
+    } catch (e) {
+      notifications.show({ color: 'red', message: e instanceof Error ? e.message : '網域查詢失敗' });
+    } finally {
+      setRefreshingCode(null);
+    }
   }
 
   function openEditUrlModal(l: Link) {
@@ -585,7 +664,11 @@ export function ManagePage() {
                     </Group>
                   </Table.Td>
                   <Table.Td>
-                    <TargetCell url={l.original_url} />
+                    <TargetCell
+                      link={l}
+                      onRefreshDomain={() => refreshDomain(l)}
+                      refreshing={refreshingCode === l.code}
+                    />
                   </Table.Td>
                   <Table.Td>
                     <Badge variant="light" color="blue" size="sm">
@@ -597,6 +680,18 @@ export function ManagePage() {
                   </Table.Td>
                   <Table.Td>
                     <Text size="sm">{l.expires_at ? dayjs(l.expires_at).format('YYYY-MM-DD HH:mm') : '永久有效'}</Text>
+                    {l.exceeds_domain_expiry ? (
+                      <Tooltip
+                        label="有效期限超過目標網域的註冊到期日（本功能上線前建立的短網址）。網域到期若未續約，這條短網址會轉向已易主的網域，請改為不晚於網域到期日"
+                        withArrow
+                        multiline
+                        maw={320}
+                      >
+                        <Badge variant="light" color="orange" size="xs" style={{ cursor: 'help' }}>
+                          超過網域期限
+                        </Badge>
+                      </Tooltip>
+                    ) : null}
                   </Table.Td>
                   <Table.Td>{statusBadge(l)}</Table.Td>
                   <Table.Td>

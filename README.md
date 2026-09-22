@@ -22,6 +22,7 @@
 - **可修改指向**：既有短網址可直接編輯原始網址（管理頁鉛筆按鈕），不需停用重建
 - 無效、已過期、已停用、保留字的短網址，一律 302 轉址至 `/404.html` 中文友善頁
 - 標籤為必填；有效期限可設為永久或指定時間
+- **有效期限不得超過目標網域的註冊到期日（防呆）**：建立時以 RDAP 查目標網域（`gov.taipei`、`example.com` 這一層）的註冊到期日並記在後台；到期時間晚於它、或設為永久，都會被擋下。短網址的到期日是自己的，不隨網域連動、不會自動延長：網域續約後在管理頁按「重新查詢網域」更新上限（`scripts/refresh_domains.py` 可批次做），再手動延長短網址。註冊機構不公開到期日的網域（`gov.tw`、`edu.tw`、`.jp` 等）不設上限；上線前建立、超過網域到期日的舊短網址會標「超過網域期限」提醒
 - 同一原始網址若已有使用中的短網址，重複建立會回 409 提示沿用
 - 管理 API（`/api/*`）需 Firebase 管理員登入；管理員名單於管理介面「管理員」頁維護
 
@@ -166,6 +167,10 @@ gcloud run services update tpe-shortlinks-api --region=asia-east1 \
 Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期後再保留 30 天才真正抹除。
 先加 `--dry-run` 可以只看會刪哪些、不動任何東西。
 
+網域註冊到期日的批次重查是 `scripts/refresh_domains.py`（同一個映像，可另建 Cloud Run Job）：
+`--backfill` 替本功能上線前建立的短網址補登網域，預設只重查 60 天內到期或 60 天沒查過的網域，
+`--all` 全部重查，`--dry-run` 只看不改。
+
 ## API 一覽
 
 | 方法與路徑 | 說明 |
@@ -175,7 +180,9 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 | `PATCH /api/links/{code}` | 修改原始網址與／或有效期限（只更新有傳的欄位；已停用者須先啟用） |
 | `POST /api/links/{code}/disable` | 停用 |
 | `POST /api/links/{code}/enable` | 重新啟用 |
-| `GET /api/links/export` | 匯出 CSV |
+| `POST /api/links/{code}/refresh-domain` | 重查目標網域的註冊到期日（只更新上限，不動短網址到期日；回報同網域超過上限的筆數） |
+| `GET /api/domains/lookup?url=` | 建立頁預查目標網域的註冊到期日（`refresh=true` 強制重查） |
+| `GET /api/links/export` | 匯出 CSV（含網域欄位） |
 | `GET /api/links/{code}/qrcode` | 下載 QR Code PNG |
 | `GET /api/tags`、`POST /api/tags`、`DELETE /api/tags/{id}` | 標籤管理 |
 | `GET/POST/DELETE /api/blocked-words` | 封鎖字詞管理 |

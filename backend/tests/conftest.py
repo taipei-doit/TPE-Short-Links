@@ -38,6 +38,24 @@ def db_session() -> Session:
         db.close()
 
 
+@pytest.fixture(autouse=True)
+def no_rdap_network(monkeypatch):
+    """Tests never reach RDAP servers. Default answer: registry publishes
+    nothing (status "unknown"), so no link lifetime is capped unless a test
+    installs its own fake via tests/test_domains.py::use_domains."""
+    import app.domains as domains_mod
+    import app.main as main_mod
+
+    def fake(host: str | None) -> domains_mod.DomainLookup:
+        name = domains_mod.registrable_domain(host)
+        if name is None:
+            return domains_mod.DomainLookup(name=None, status="not_applicable", detail="stub")
+        return domains_mod.DomainLookup(name=name, status="unknown", detail="stub")
+
+    monkeypatch.setattr(main_mod, "lookup_domain", fake)
+    monkeypatch.setattr(domains_mod, "lookup_domain", fake)
+
+
 @pytest.fixture()
 def client(db_session: Session) -> TestClient:
     def override_get_db():
