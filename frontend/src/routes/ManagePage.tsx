@@ -216,7 +216,7 @@ function TargetCell({
           </Text>
         </div>
       </Tooltip>
-      <DomainStatusLine domain={domainOf(link)} onRefresh={onRefreshDomain} refreshing={refreshing} />
+      <DomainStatusLine domain={domainOf(link)} onRefresh={onRefreshDomain} refreshing={refreshing} compact />
     </div>
   );
 }
