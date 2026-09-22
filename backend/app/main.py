@@ -177,6 +177,10 @@ def link_to_out(link: ShortLink, tag_name: str, domain: Domain | None = None) ->
         domain_expires_at=as_utc(domain.expires_at) if domain is not None else None,
         domain_checked_at=as_utc(domain.checked_at) if domain is not None else None,
         exceeds_domain_expiry=_exceeds_cap(expires_at, domain_cap(domain)),
+        domain_suspect=bool(domain.suspect) if domain is not None else False,
+        domain_suspect_detail=domain.suspect_detail if domain is not None and domain.suspect else "",
+        domain_registered_at=as_utc(domain.registered_at) if domain is not None else None,
+        domain_registrar=domain.registrar if domain is not None else "",
     )
 
 
@@ -187,6 +191,19 @@ def domain_to_out(domain: Domain) -> DomainOut:
         expires_at=as_utc(domain.expires_at),
         checked_at=as_utc(domain.checked_at),
         detail=domain.detail,
+        registered_at=as_utc(domain.registered_at),
+        registrar=domain.registrar,
+        nameservers=domain.nameservers,
+        suspect=bool(domain.suspect),
+        suspect_detail=domain.suspect_detail,
+        suspect_at=as_utc(domain.suspect_at),
+        suspect_expires_at=as_utc(domain.suspect_expires_at),
+        suspect_registered_at=as_utc(domain.suspect_registered_at),
+        suspect_registrar=domain.suspect_registrar,
+        suspect_nameservers=domain.suspect_nameservers,
+        suspect_dropped=bool(domain.suspect_dropped),
+        confirmed_by=domain.confirmed_by,
+        confirmed_at=as_utc(domain.confirmed_at),
     )
 
 
@@ -230,16 +247,98 @@ def ensure_domain(db: Session, url: str, *, force: bool = False) -> Domain | Non
         db.add(domain)
     if result.status == STATUS_ERROR and domain.status == STATUS_OK:
         domain.detail = f"重新查詢失敗（{result.detail}），沿用先前查得的到期日"[:255]
+    elif _looks_like_takeover(domain, result):
+        _park_as_suspect(domain, result)
     else:
-        domain.status = result.status
-        domain.expires_at = result.expires_at
-        domain.detail = result.detail[:255]
-        domain.source = result.source[:255]
+        _apply_lookup(domain, result)
     domain.checked_at = now_utc()
     # Flushed at once so a policy error raised right after (422) cannot leave
     # a second copy of the row pending in the same session.
     db.flush()
     return domain
+
+
+# 註冊日期若相差不到這麼多，視為同一筆登記（部分註冊機構的時間戳會有秒級飄移）。
+_REGISTRATION_JITTER = dt.timedelta(days=1)
+
+
+def _looks_like_takeover(domain: Domain, result) -> bool:
+    """Did the domain change hands since we last looked?
+
+    RDAP only says how long the current registration runs, not whose it is.
+    The registration date is the tell: a same-holder renewal keeps it, a lapse
+    followed by someone else's registration resets it to a recent date. A
+    domain that was registered and is now gone from the registry is the step
+    before that -- anyone may pick it up -- and is flagged the same way.
+    Only ever compares against a record we hold; the first lookup just fills.
+    """
+    if domain.status != STATUS_OK:
+        return False
+    if result.dropped:
+        return True
+    if result.status != STATUS_OK or result.registered_at is None:
+        return False
+    known = as_utc(domain.registered_at)
+    return known is not None and result.registered_at > known + _REGISTRATION_JITTER
+
+
+def _park_as_suspect(domain: Domain, result) -> None:
+    """Hold a lookup's values aside instead of applying them; freezes the record."""
+    known = as_utc(domain.registered_at)
+    if result.dropped:
+        detail = "註冊機構已查無此網域：原登記可能已被刪除，任何人都能重新註冊"
+    else:
+        detail = (
+            f"註冊日期由 {_fmt_taipei(known) if known else '未知'} 變為 {_fmt_taipei(result.registered_at)}，"
+            "網域可能已到期並被他人重新註冊"
+        )
+        if result.registrar and result.registrar != domain.registrar:
+            detail += f"；註冊商由「{domain.registrar or '未知'}」變為「{result.registrar}」"
+    # Keep the first sighting's timestamp so the flag's age is honest.
+    if not domain.suspect:
+        domain.suspect_at = now_utc()
+    domain.suspect = True
+    domain.suspect_detail = detail[:512]
+    domain.suspect_dropped = bool(result.dropped)
+    domain.suspect_expires_at = result.expires_at
+    domain.suspect_registered_at = result.registered_at
+    domain.suspect_registrar = result.registrar[:255]
+    domain.suspect_nameservers = result.nameservers[:512]
+
+
+def _apply_lookup(domain: Domain, result) -> None:
+    domain.status = result.status
+    domain.expires_at = result.expires_at
+    domain.detail = result.detail[:255]
+    domain.source = result.source[:255]
+    if result.status == STATUS_OK:
+        domain.registered_at = result.registered_at
+        domain.registrar = result.registrar[:255]
+        domain.nameservers = result.nameservers[:512]
+    _clear_suspect(domain)
+
+
+def _clear_suspect(domain: Domain) -> None:
+    domain.suspect = False
+    domain.suspect_detail = ""
+    domain.suspect_at = None
+    domain.suspect_dropped = False
+    domain.suspect_expires_at = None
+    domain.suspect_registered_at = None
+    domain.suspect_registrar = ""
+    domain.suspect_nameservers = ""
+
+
+def refuse_if_suspect(domain: Domain | None) -> None:
+    """No new links for (or moved onto) a domain that may have changed hands."""
+    if domain is not None and domain.suspect:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"網域 {domain.name} 疑似已易主（{domain.suspect_detail}）。"
+                "請先在管理頁確認該網域仍為本機關所有，再建立指向它的短網址"
+            ),
+        )
 
 
 def domain_cap(domain: Domain | None) -> dt.datetime | None:
@@ -409,6 +508,7 @@ def create_link(
     # 查詢結果先入庫：就算這次建立被政策擋下，下一次也不必再問一次 RDAP。
     domain = ensure_domain(db, str(payload.original_url))
     db.commit()
+    refuse_if_suspect(domain)
     enforce_domain_cap(payload.expires_at, domain)
 
     link = ShortLink(
@@ -1239,6 +1339,7 @@ def update_link(
         link.original_url = new_url
         if url_changed:
             domain = ensure_domain(db, new_url)
+            refuse_if_suspect(domain)
             link.domain_name = domain.name if domain is not None else None
 
     if "expires_at" in fields:
@@ -1313,6 +1414,43 @@ def refresh_link_domain(
         over_cap_links=count_links_over_cap(db, domain),
         link=link_to_out(link, tag.name, domain),
     )
+
+
+@app.post("/api/domains/{name}/confirm", response_model=DomainOut)
+def confirm_domain(
+    name: str = Path(..., min_length=1, max_length=253),
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(get_firebase_user),
+) -> DomainOut:
+    """管理員確認「疑似易主」的網域仍為本機關所有：採用擱置中的新登記資料、解除標記。
+
+    Recorded with who confirmed and when; the only way a flagged domain
+    becomes usable again, and a deliberate one.
+    """
+    domain = db.get(Domain, name.strip().lower())
+    if domain is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not domain.suspect:
+        raise HTTPException(status_code=422, detail="此網域目前沒有待確認的變更")
+    if domain.suspect_dropped:
+        # Nothing to adopt: the registry has no record. Clear the flag but
+        # keep the last known registration; the next lookup starts afresh.
+        domain.status = "unknown"
+        domain.expires_at = None
+        domain.detail = "管理員確認：註冊機構查無此網域，視同未公開到期日"
+    else:
+        domain.status = STATUS_OK
+        domain.expires_at = domain.suspect_expires_at
+        domain.registered_at = domain.suspect_registered_at
+        domain.registrar = domain.suspect_registrar
+        domain.nameservers = domain.suspect_nameservers
+        domain.detail = "管理員確認登記變更後採用的 RDAP 資料"
+    _clear_suspect(domain)
+    domain.confirmed_by = str(_auth.get("email") or "").strip().lower()[:320]
+    domain.confirmed_at = now_utc()
+    db.add(domain)
+    db.commit()
+    return domain_to_out(domain)
 
 
 # Must be declared before the catch-all /{code} route so "404.html" is never

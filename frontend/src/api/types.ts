@@ -32,6 +32,11 @@ export type Link = {
   domain_checked_at: string | null;
   /** 到期日（或永久有效）超過網域註冊到期日；永久有效不擋只警示，明確填的日期超過則建立時就會被擋 */
   exceeds_domain_expiry: boolean;
+  /** 網域疑似已易主（註冊日期變晚或網域從註冊機構消失），待管理員確認 */
+  domain_suspect: boolean;
+  domain_suspect_detail: string;
+  domain_registered_at: string | null;
+  domain_registrar: string;
 };
 
 /** ok＝查到到期日；unknown＝註冊機構不公開（gov.tw 等）；error＝暫時查不到；not_applicable＝IP 位址等 */
@@ -43,6 +48,20 @@ export type DomainInfo = {
   expires_at: string | null;
   checked_at: string | null;
   detail: string;
+  registered_at: string | null;
+  registrar: string;
+  nameservers: string;
+  /** 疑似易主：新查到的登記資料擱在 suspect_* 欄位，管理員確認後才採用 */
+  suspect: boolean;
+  suspect_detail: string;
+  suspect_at: string | null;
+  suspect_expires_at: string | null;
+  suspect_registered_at: string | null;
+  suspect_registrar: string;
+  suspect_nameservers: string;
+  suspect_dropped: boolean;
+  confirmed_by: string;
+  confirmed_at: string | null;
 };
 
 export type DomainRefreshResult = {

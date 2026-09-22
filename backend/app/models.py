@@ -83,6 +83,28 @@ class Domain(Base):
     # Human-readable outcome of the last lookup (which registry, or why none).
     detail: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
     source: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
+    # Who holds it, as far as RDAP tells: registration date is the identity
+    # anchor (a same-holder renewal keeps it, a takeover resets it), the rest
+    # is context for the admin deciding whether a change is legitimate.
+    registered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    registrar: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
+    nameservers: Mapped[str] = mapped_column(String(512), nullable=False, server_default="")
+    # Takeover suspicion. Set when a lookup returns a later registration date
+    # than recorded, or the domain has vanished from the registry. While set,
+    # the recorded expiry/identity above is frozen, the new values wait in
+    # suspect_*, and links may not be created for (or moved onto) the domain
+    # until an admin confirms the domain is still theirs.
+    suspect: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    suspect_detail: Mapped[str] = mapped_column(String(512), nullable=False, server_default="")
+    suspect_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspect_expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspect_registered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspect_registrar: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
+    suspect_nameservers: Mapped[str] = mapped_column(String(512), nullable=False, server_default="")
+    suspect_dropped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Last admin who confirmed a flagged change (audit trail).
+    confirmed_by: Mapped[str] = mapped_column(String(320), nullable=False, server_default="")
+    confirmed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

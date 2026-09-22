@@ -69,6 +69,15 @@ class DomainLookup:
     expires_at: dt.datetime | None = None
     detail: str = ""
     source: str = ""
+    # Identity signals. A renewal by the same holder keeps the registration
+    # date; a lapse followed by someone else's registration resets it. That
+    # is what the takeover check in app/main.py compares.
+    registered_at: dt.datetime | None = None
+    registrar: str = ""
+    nameservers: str = ""
+    # True when the registry answered but has no such domain any more -- the
+    # domain was dropped and anyone may register it.
+    dropped: bool = False
 
 
 class RdapUnsupported(Exception):
@@ -178,9 +187,9 @@ def fetch_rdap_domain(name: str) -> tuple[dict | None, str]:
         raise RdapUnavailable("RDAP 回應不是有效的 JSON") from exc
 
 
-def _expiration_from(record: dict) -> dt.datetime | None:
+def _event_date(record: dict, action: str) -> dt.datetime | None:
     for event in record.get("events") or []:
-        if str(event.get("eventAction", "")).lower() != "expiration":
+        if str(event.get("eventAction", "")).lower() != action:
             continue
         raw = event.get("eventDate")
         if not raw:
@@ -191,6 +200,37 @@ def _expiration_from(record: dict) -> dt.datetime | None:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
     return None
+
+
+def _expiration_from(record: dict) -> dt.datetime | None:
+    return _event_date(record, "expiration")
+
+
+def _registration_from(record: dict) -> dt.datetime | None:
+    return _event_date(record, "registration")
+
+
+def _registrar_from(record: dict) -> str:
+    """Registrar name from the entity with the "registrar" role (jCard fn)."""
+    for entity in record.get("entities") or []:
+        roles = [str(r).lower() for r in (entity.get("roles") or [])]
+        if "registrar" not in roles:
+            continue
+        vcard = entity.get("vcardArray")
+        if isinstance(vcard, list) and len(vcard) > 1:
+            for prop in vcard[1] or []:
+                if isinstance(prop, list) and len(prop) >= 4 and str(prop[0]).lower() == "fn" and prop[3]:
+                    return str(prop[3]).strip()
+        if entity.get("handle"):
+            return str(entity["handle"]).strip()
+    return ""
+
+
+def _nameservers_from(record: dict) -> str:
+    names = sorted(
+        {str(ns.get("ldhName") or "").lower() for ns in (record.get("nameservers") or []) if ns.get("ldhName")}
+    )
+    return ", ".join(names)
 
 
 def lookup_domain(host: str | None) -> DomainLookup:
@@ -215,9 +255,19 @@ def lookup_domain(host: str | None) -> DomainLookup:
             status=STATUS_UNKNOWN,
             detail="註冊機構未公開此網域的登記資料（政府 gov.tw、學術 edu.tw 等網域不在公開 RDAP 內）",
             source=base,
+            dropped=True,
         )
     expires_at = _expiration_from(record)
     if expires_at is None:
         return DomainLookup(name=name, status=STATUS_UNKNOWN, detail="註冊機構未公開此網域的到期日", source=base)
     ldh = str(record.get("ldhName") or name).lower()
-    return DomainLookup(name=name, status=STATUS_OK, expires_at=expires_at, detail=f"RDAP：{ldh}", source=base)
+    return DomainLookup(
+        name=name,
+        status=STATUS_OK,
+        expires_at=expires_at,
+        detail=f"RDAP：{ldh}",
+        source=base,
+        registered_at=_registration_from(record),
+        registrar=_registrar_from(record)[:255],
+        nameservers=_nameservers_from(record)[:512],
+    )

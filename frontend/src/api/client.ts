@@ -241,6 +241,9 @@ export const api = {
     apiFetch<DomainInfo>(
       `/api/domains/lookup?url=${encodeURIComponent(url)}${refresh ? '&refresh=true' : ''}`,
     ),
+  /** 管理員確認「疑似易主」的網域仍為本機關所有，採用新登記資料並解除標記。 */
+  confirmDomain: (name: string) =>
+    apiFetch<DomainInfo>(`/api/domains/${encodeURIComponent(name)}/confirm`, { method: 'POST' }),
   /** 重查這條短網址目標網域的註冊有效期（只更新後台記錄的上限，不動任何短網址的到期日）。 */
   refreshLinkDomain: (code: string) =>
     apiFetch<DomainRefreshResult>(`/api/links/${encodeURIComponent(code)}/refresh-domain`, {

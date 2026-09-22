@@ -75,16 +75,36 @@ class LinkOut(BaseModel):
     # past the cap are refused on input, so this only flags permanent ones,
     # legacy links, or a cap that moved earlier. Shown as a warning.
     exceeds_domain_expiry: bool = False
+    # The domain is suspected of having changed hands (see Domain.suspect).
+    domain_suspect: bool = False
+    domain_suspect_detail: str = ""
+    domain_registered_at: dt.datetime | None = None
+    domain_registrar: str = ""
 
 
 class DomainOut(BaseModel):
-    """Registration expiry of one registrable domain (see app/domains.py)."""
+    """Registration state of one registrable domain (see app/domains.py)."""
 
     name: str | None
     status: str  # ok | unknown | error | not_applicable
     expires_at: dt.datetime | None
     checked_at: dt.datetime | None
     detail: str
+    registered_at: dt.datetime | None = None
+    registrar: str = ""
+    nameservers: str = ""
+    # Suspected takeover: the new values are held here, not applied, until
+    # an admin confirms the domain is still theirs.
+    suspect: bool = False
+    suspect_detail: str = ""
+    suspect_at: dt.datetime | None = None
+    suspect_expires_at: dt.datetime | None = None
+    suspect_registered_at: dt.datetime | None = None
+    suspect_registrar: str = ""
+    suspect_nameservers: str = ""
+    suspect_dropped: bool = False
+    confirmed_by: str = ""
+    confirmed_at: dt.datetime | None = None
 
 
 class DomainRefreshOut(BaseModel):

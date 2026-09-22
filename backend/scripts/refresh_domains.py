@@ -6,6 +6,10 @@ by a lookup. This script keeps the recorded caps current in bulk -- so the
 management page shows fresh dates and renewed domains stop blocking longer
 expiries -- and records the domain of links created before the check existed.
 
+It never accepts a change of holder on its own: a later registration date or
+a domain gone from the registry is parked as "suspect" (printed here, red in
+the admin UI) until an admin confirms it. Same-holder renewals apply directly.
+
 Run as a Cloud Run Job (the Cloud SQL instance is not reachable from the
 office network), e.g. daily alongside purge-expired-files:
 
@@ -27,7 +31,7 @@ import datetime as dt
 import sys
 from urllib.parse import urlparse
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_engine
@@ -66,6 +70,8 @@ def refresh(db: Session, *, due_days: int, everything: bool, dry_run: bool) -> t
                 Domain.checked_at.is_(None),
                 Domain.checked_at <= now - dt.timedelta(days=due_days),
                 Domain.expires_at <= now + dt.timedelta(days=due_days),
+                # Rows from before the takeover guard have no identity anchor yet.
+                and_(Domain.status == "ok", Domain.registered_at.is_(None)),
             )
         )
     domains = db.execute(stmt.order_by(Domain.name)).scalars().all()
@@ -89,6 +95,7 @@ def refresh(db: Session, *, due_days: int, everything: bool, dry_run: bool) -> t
         print(
             f"  {domain.name}: {before[0]} {before[1]} -> {domain.status} {as_utc(domain.expires_at)}"
             + (f"  WARNING {over} link(s) outlive the registration" if over else "")
+            + (f"  SUSPECT {domain.suspect_detail}" if domain.suspect else "")
         )
     return refreshed, over_cap
 

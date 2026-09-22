@@ -36,7 +36,7 @@ import dayjs from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { DomainStatusLine, domainCapDate } from '../components/DomainStatus';
+import { DomainStatusLine, domainCapDate, openDomainConfirmModal } from '../components/DomainStatus';
 import { QrCodeDialog } from '../components/QrCodeDialog';
 import { api } from '../api/client';
 import type { Link, Tag } from '../api/types';
@@ -50,6 +50,10 @@ function domainOf(link: Link) {
     status: link.domain_status,
     expires_at: link.domain_expires_at,
     checked_at: link.domain_checked_at,
+    registered_at: link.domain_registered_at,
+    registrar: link.domain_registrar,
+    suspect: link.domain_suspect,
+    suspect_detail: link.domain_suspect_detail,
   };
 }
 
@@ -193,10 +197,12 @@ function EditUrlForm({
 function TargetCell({
   link,
   onRefreshDomain,
+  onConfirmDomain,
   refreshing,
 }: {
   link: Link;
   onRefreshDomain: () => void;
+  onConfirmDomain: () => void;
   refreshing: boolean;
 }) {
   const url = link.original_url;
@@ -218,7 +224,13 @@ function TargetCell({
           </Text>
         </div>
       </Tooltip>
-      <DomainStatusLine domain={domainOf(link)} onRefresh={onRefreshDomain} refreshing={refreshing} compact />
+      <DomainStatusLine
+        domain={domainOf(link)}
+        onRefresh={onRefreshDomain}
+        onConfirm={onConfirmDomain}
+        refreshing={refreshing}
+        compact
+      />
     </div>
   );
 }
@@ -380,11 +392,37 @@ export function ManagePage() {
   // 重查網域註冊有效期；一次只讓一列轉圈。
   const [refreshingCode, setRefreshingCode] = useState<string | null>(null);
 
+  // 疑似易主的網域：抓完整登記資料（含擱置中的新值）開確認視窗。
+  async function confirmDomain(l: Link) {
+    try {
+      const info = await api.lookupDomain(l.original_url);
+      if (!info.suspect) {
+        notifications.show({ color: 'blue', message: `網域 ${info.name} 目前沒有待確認的變更` });
+        load();
+        return;
+      }
+      openDomainConfirmModal(info, load);
+    } catch (e) {
+      notifications.show({ color: 'red', message: e instanceof Error ? e.message : '讀取網域資料失敗' });
+    }
+  }
+
   async function refreshDomain(l: Link) {
     setRefreshingCode(l.code);
     try {
       const res = await api.refreshLinkDomain(l.code);
       const d = res.domain;
+      if (d.suspect) {
+        notifications.show({
+          color: 'red',
+          title: `網域 ${d.name} 疑似已易主`,
+          message: `${d.suspect_detail}。已擱置新資料，請檢視後確認。`,
+          autoClose: 8000,
+        });
+        load();
+        openDomainConfirmModal(d, load);
+        return;
+      }
       const state =
         d.status === 'ok'
           ? `註冊至 ${dayjs(d.expires_at).format('YYYY-MM-DD')}`
@@ -669,6 +707,7 @@ export function ManagePage() {
                     <TargetCell
                       link={l}
                       onRefreshDomain={() => refreshDomain(l)}
+                      onConfirmDomain={() => confirmDomain(l)}
                       refreshing={refreshingCode === l.code}
                     />
                   </Table.Td>

@@ -7,7 +7,7 @@ import { modals } from '@mantine/modals';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { DomainStatusLine, domainCapDate } from '../components/DomainStatus';
+import { DomainStatusLine, domainCapDate, openDomainConfirmModal } from '../components/DomainStatus';
 import { QrCodeDialog } from '../components/QrCodeDialog';
 import { api } from '../api/client';
 import type { CreateLinkIn, DomainInfo, Link, Tag } from '../api/types';
@@ -90,8 +90,10 @@ export function CreatePage() {
 
   const domainCap = domainCapDate(domainInfo);
   const domainLapsed = domainCap !== null && dayjs(domainCap).isBefore(dayjs());
+  // 疑似易主：後端會擋建立，這裡先把送出鈕關掉並引導去確認。
+  const domainSuspect = domainInfo?.suspect === true;
   // 「永久有效」照常可建，只提醒：網域到期沒續約，短網址會轉向可能已易主的網域。
-  const permanentWarning = expiryMode === 'permanent' && domainCap !== null && !domainLapsed;
+  const permanentWarning = expiryMode === 'permanent' && domainCap !== null && !domainLapsed && !domainSuspect;
 
   const expiryError = useMemo(() => {
     if (expiryMode === 'permanent') return null;
@@ -103,7 +105,8 @@ export function CreatePage() {
     return null;
   }, [expiryMode, expiresAt, domainCap]);
 
-  const canSubmit = !originalUrlError && !!tagId && !expiryError && !loading && !domainLoading && !domainLapsed;
+  const canSubmit =
+    !originalUrlError && !!tagId && !expiryError && !loading && !domainLoading && !domainLapsed && !domainSuspect;
 
   async function onSubmit() {
     setTagTouched(true);
@@ -192,6 +195,23 @@ export function CreatePage() {
               <Text size="xs" c="dimmed">
                 查詢網域註冊有效期中…
               </Text>
+            ) : domainSuspect && domainInfo ? (
+              <Alert color="red" variant="light" icon={<IconWorldSearch size={18} />} title={`網域 ${domainInfo.name} 疑似已易主`}>
+                <Stack gap="xs">
+                  <Text size="sm">
+                    {domainInfo.suspect_detail}。在管理員確認該網域仍為本機關所有之前，不能建立指向它的短網址。
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color="red"
+                    w="fit-content"
+                    onClick={() => openDomainConfirmModal(domainInfo, () => lookupDomain(validUrl))}
+                  >
+                    檢視差異並確認
+                  </Button>
+                </Stack>
+              </Alert>
             ) : domainLapsed ? (
               <Alert color="red" variant="light" icon={<IconWorldSearch size={18} />} title="網域註冊已到期">
                 <Stack gap="xs">
