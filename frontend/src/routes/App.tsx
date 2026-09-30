@@ -7,6 +7,12 @@ import { useAuth } from '../auth/AuthContext';
 // 資訊局識別標誌：import 進 bundle 讓 Vite 產出 /assets/ 雜湊檔名，
 // url.taipei 網域只代理 /assets/*，不能放 public/ 根目錄。
 import doitLogo from '../assets/doit-logo.png';
+// 標章只有 2.5KB，預設會被內嵌成 data URI；標章核發要求連到自行存放的圖檔，強制輸出成獨立檔案。
+import accessibilityBadge from '../assets/accessibility-aaa.png?no-inline';
+// 官方 PNG 只有 88×31，高解析度螢幕會糊；2x/3x 由官方 .ai 向量原檔算出，顯示尺寸不變。
+// 檔名不能帶 @：後端代理 /assets/ 的檔名白名單不收。
+import accessibilityBadge2x from '../assets/accessibility-aaa-2x.png?no-inline';
+import accessibilityBadge3x from '../assets/accessibility-aaa-3x.png?no-inline';
 // 公開頁（聲明、查核、無障礙）要最快畫出來，維持同步載入；
 // 管理端與 QR 產生器按需載入，公開頁首屏不必下載整個後台。
 import { AccessibilityPage } from './AccessibilityPage';
@@ -351,18 +357,37 @@ export function App() {
             <a className="access-key-link" href="#footer-block" id="AZ" accessKey="Z" title="下方功能區塊">
               :::
             </a>
-            <Text
-              size="xs"
-              c="dimmed"
-              component="a"
-              href="https://doit.gov.taipei"
-              target="_blank"
-              rel="noopener"
-              title="[另開新視窗]臺北市政府資訊局"
-              style={{ textDecoration: 'none' }}
-            >
-              © 臺北市政府資訊局
-            </Text>
+            <Group gap="md">
+              {/* 數位發展部無障礙標章：寬高 88×31 為核發辦法規格，不可更動 */}
+              <a
+                href="https://accessibility.moda.gov.tw/Applications/Detail?category=20260909081125"
+                target="_blank"
+                rel="noopener"
+                title="[另開新視窗]無障礙網站"
+                style={{ display: 'inline-flex' }}
+              >
+                <img
+                  src={accessibilityBadge}
+                  srcSet={`${accessibilityBadge2x} 2x, ${accessibilityBadge3x} 3x`}
+                  width="88"
+                  height="31"
+                  alt="通過AAA無障礙網頁檢測"
+                  style={{ border: 0 }}
+                />
+              </a>
+              <Text
+                size="xs"
+                c="dimmed"
+                component="a"
+                href="https://doit.gov.taipei"
+                target="_blank"
+                rel="noopener"
+                title="[另開新視窗]臺北市政府資訊局"
+                style={{ textDecoration: 'none' }}
+              >
+                © 臺北市政府資訊局
+              </Text>
+            </Group>
             <Group gap="lg">
               {isPublicHost && (
                 <>
