@@ -2,6 +2,8 @@ import type { User } from 'firebase/auth';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { api } from '../api/client';
+
 const EMAIL_FOR_SIGN_IN_KEY = 'emailForSignIn';
 
 /** 對外網域（url.taipei）純屬公眾服務，完全不載入 Firebase——
@@ -75,15 +77,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // 登入信由後端產生並寄出（府內信箱走市府寄信中繼，其餘走 Gmail）
   const requestLoginLink = useCallback(async (email: string) => {
-    const [{ default: app }, { getFunctions, httpsCallable }] = await Promise.all([
-      import('../firebase'),
-      import('firebase/functions'),
-    ]);
-    const fn = getFunctions(app);
-    const sendAdminLoginLink = httpsCallable<{ email: string }>(fn, 'sendAdminLoginLink');
     window.localStorage.setItem(EMAIL_FOR_SIGN_IN_KEY, email);
-    await sendAdminLoginLink({ email });
+    await api.requestLoginLink(email);
   }, []);
 
   const signOut = useCallback(async () => {

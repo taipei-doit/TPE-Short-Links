@@ -73,6 +73,33 @@ def invalidate_admin_cache(email: str | None = None) -> None:
         _admin_cache.pop(email, None)
 
 
+def generate_sign_in_link(email: str) -> str:
+    """Create a Firebase email sign-in (magic) link without sending it.
+
+    Same call firebase-admin's generateSignInWithEmailLink makes, done over REST
+    with this service's own credentials so the backend needs no Firebase SDK.
+    """
+    import google.auth
+    from google.auth.transport.requests import AuthorizedSession
+
+    settings = get_settings()
+    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    r = AuthorizedSession(creds).post(
+        "https://identitytoolkit.googleapis.com/v1/projects/"
+        f"{settings.FIREBASE_PROJECT_ID}/accounts:sendOobCode",
+        json={
+            "requestType": "EMAIL_SIGNIN",
+            "email": email,
+            "continueUrl": settings.LOGIN_CONTINUE_URL,
+            "canHandleCodeInApp": True,
+            "returnOobLink": True,
+        },
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()["oobLink"]
+
+
 def get_firebase_user(
     request: Request,
 ) -> dict[str, Any]:

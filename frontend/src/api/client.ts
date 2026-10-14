@@ -187,6 +187,11 @@ async function putToStorage(
 }
 
 export const api = {
+  requestLoginLink: (email: string) =>
+    apiFetch<{ success: boolean }>('/api/auth/login-link', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
   getTags: () => apiFetch<Tag[]>('/api/tags'),
   createLink: (payload: CreateLinkIn) =>
     apiFetch<Link>('/api/links', { method: 'POST', body: JSON.stringify(payload) }),

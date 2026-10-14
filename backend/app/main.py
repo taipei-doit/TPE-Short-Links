@@ -13,7 +13,7 @@ import secrets
 import socket
 import ssl
 import time
-from html import unescape
+from html import escape as html_escape, unescape
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -27,11 +27,12 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import get_firebase_user, invalidate_admin_cache
+from app.auth import generate_sign_in_link, get_firebase_user, invalidate_admin_cache, is_admin_email
 from app.db.session import get_db
 from app.domains import STATUS_ERROR, STATUS_OK, lookup_domain, registrable_domain
 from app.files import router as files_router
 from app.models import AdminUser, BlockedWord, Domain, FileShare, ReservedCode, ShortLink, Tag
+from app.mailer import send_mail
 from app.pages import NOT_FOUND_HTML, redirect_to_not_found
 from app.pins import verify_pin
 from app.schemas import (
@@ -1154,6 +1155,49 @@ def internal_whitelist_check(
     email = str(payload.email).strip().lower()
     exists = db.execute(select(AdminUser.email).where(AdminUser.email == email)).first() is not None
     return {"allowed": exists}
+
+
+_login_link_sent: dict[str, float] = {}
+
+LOGIN_MAIL_SUBJECT = "臺北市短網址服務 - 管理員登入連結"
+LOGIN_MAIL_HTML = """
+<p>您申請了臺北市短網址服務的管理員登入連結。</p>
+<p><a href="{link}">請點此登入</a></p>
+<p>此連結僅能使用一次。若您並未提出此申請，請忽略本郵件。</p>
+"""
+
+
+@app.post("/api/auth/login-link")
+def request_login_link(payload: WhitelistCheckIn) -> dict[str, bool]:
+    """Email a magic sign-in link to a whitelisted admin.
+
+    Public by necessity (nobody is signed in yet). Only whitelisted addresses
+    ever receive mail, and each address gets at most one email per cooldown.
+    """
+    settings = get_settings()
+    email = str(payload.email).strip().lower()
+
+    try:
+        allowed = is_admin_email(email)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail="暫時無法確認管理員身分，請稍後再試") from e
+    if not allowed:
+        raise HTTPException(status_code=403, detail="此電子郵件不在管理員名單中")
+
+    now = time.monotonic()
+    last = _login_link_sent.get(email)
+    if last is not None and now - last < settings.LOGIN_LINK_COOLDOWN_SECONDS:
+        raise HTTPException(status_code=429, detail="登入連結剛寄出，請稍候一分鐘再重新申請")
+
+    try:
+        link = generate_sign_in_link(email)
+        send_mail(email, LOGIN_MAIL_SUBJECT, LOGIN_MAIL_HTML.format(link=html_escape(link)))
+    except Exception:
+        logging.exception("login link email failed")
+        raise HTTPException(status_code=502, detail="登入連結寄送失敗，請稍後再試")
+
+    _login_link_sent[email] = now
+    return {"success": True}
 
 
 @app.get("/api/admins", response_model=list[AdminOut])

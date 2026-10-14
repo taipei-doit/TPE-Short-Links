@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     #   for backend ID token verification.
     FIREBASE_PROJECT_ID: str = ""
     FIREBASE_APP_ID: str = ""
-    # Shared secret used by the magic-link Cloud Function to ask this service
-    # whether an email is whitelisted. Empty disables the internal endpoint.
+    # Shared secret used by the old magic-link Cloud Function to ask this
+    # service whether an email is whitelisted (also seeds FILE_DOWNLOAD_SECRET).
+    # Empty disables the internal endpoint.
     INTERNAL_API_TOKEN: str = ""
 
     # --- PIN-protected file sharing (/f/{code}) ---
@@ -58,6 +59,27 @@ class Settings(BaseSettings):
     # A domain's RDAP result is reused for this long before creating another
     # link to it triggers a new lookup. Manual refresh always re-queries.
     DOMAIN_CHECK_TTL_HOURS: int = 24
+
+    # --- Outgoing email (app/mailer.py) ---
+    # City mail relay: address, per-system Bearer token and its self-signed
+    # CA certificate (PEM text). All three come from the deployment's secret
+    # configuration; leaving any empty sends everything via SMTP.
+    RELAY_URL: str = ""
+    RELAY_TOKEN: str = ""
+    RELAY_CA_PEM: str = ""
+    # Recipient domains the relay accepts. Others always go via SMTP.
+    RELAY_DOMAINS: str = "gov.taipei"
+    # Fallback SMTP (the Gmail account the old Cloud Function used).
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASS: str = ""
+    SMTP_FROM: str = ""
+    # Where admins land after clicking the magic link; must be a Firebase Auth
+    # authorized domain.
+    LOGIN_CONTINUE_URL: str = "https://admin.url.taipei"
+    # Minimum seconds between login emails to the same address.
+    LOGIN_LINK_COOLDOWN_SECONDS: int = 60
 
     def reserved_codes_set(self) -> set[str]:
         raw = (self.RESERVED_CODES or "").strip()
