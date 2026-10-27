@@ -27,7 +27,13 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import generate_sign_in_link, get_firebase_user, invalidate_admin_cache, is_admin_email
+from app.auth import (
+    generate_sign_in_link,
+    get_firebase_user,
+    invalidate_admin_cache,
+    is_admin_email,
+    send_sign_in_email_via_firebase,
+)
 from app.db.session import get_db
 from app.domains import STATUS_ERROR, STATUS_OK, lookup_domain, registrable_domain
 from app.files import router as files_router
@@ -1131,32 +1137,6 @@ def delete_blocked_word(
     return {"message": "Word removed", "word": word_lower}
 
 
-@app.post("/api/internal/whitelist-check")
-def internal_whitelist_check(
-    request: Request,
-    payload: WhitelistCheckIn,
-    db: Session = Depends(get_db),
-) -> dict[str, bool]:
-    """Whitelist lookup for the magic-link sender (Cloud Function).
-
-    That function runs before anyone is signed in, so it cannot present an ID
-    token; it authenticates with a shared secret instead. Only ever returns a
-    boolean, so the whitelist itself is never exposed.
-    """
-    settings = get_settings()
-    expected = settings.INTERNAL_API_TOKEN
-    if not expected:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    provided = request.headers.get("X-Internal-Token", "")
-    if not secrets.compare_digest(provided, expected):
-        raise HTTPException(status_code=401, detail="Invalid internal token")
-
-    email = str(payload.email).strip().lower()
-    exists = db.execute(select(AdminUser.email).where(AdminUser.email == email)).first() is not None
-    return {"allowed": exists}
-
-
 _login_link_sent: dict[str, float] = {}
 
 LOGIN_MAIL_SUBJECT = "臺北市短網址服務 - 管理員登入連結"
@@ -1189,12 +1169,19 @@ def request_login_link(payload: WhitelistCheckIn) -> dict[str, bool]:
     if last is not None and now - last < settings.LOGIN_LINK_COOLDOWN_SECONDS:
         raise HTTPException(status_code=429, detail="登入連結剛寄出，請稍候一分鐘再重新申請")
 
+    # Relay -> SMTP happens inside send_mail; if both fail, Firebase Auth sends
+    # its own template email as the last resort so admins can still sign in.
     try:
         link = generate_sign_in_link(email)
         send_mail(email, LOGIN_MAIL_SUBJECT, LOGIN_MAIL_HTML.format(link=html_escape(link)))
     except Exception:
-        logging.exception("login link email failed")
-        raise HTTPException(status_code=502, detail="登入連結寄送失敗，請稍後再試")
+        logging.exception("login link email failed, falling back to Firebase-sent email")
+        try:
+            send_sign_in_email_via_firebase(email)
+            logging.warning("login link sent via Firebase fallback")
+        except Exception:
+            logging.exception("login link Firebase fallback failed")
+            raise HTTPException(status_code=502, detail="登入連結寄送失敗，請稍後再試")
 
     _login_link_sent[email] = now
     return {"success": True}

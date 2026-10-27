@@ -72,46 +72,10 @@ def test_invalid_email_rejected(client: TestClient):
     assert res.status_code == 422
 
 
-def test_internal_whitelist_check_requires_token(client: TestClient, db_session: Session, monkeypatch):
-    seed(db_session, "admin@gov.taipei")
-
-    from app.settings import get_settings
-
-    settings = get_settings()
-    monkeypatch.setattr(settings, "INTERNAL_API_TOKEN", "s3cret", raising=False)
-
-    # No token -> 401
-    assert client.post("/api/internal/whitelist-check", json={"email": "admin@gov.taipei"}).status_code == 401
-
-    # Wrong token -> 401
-    res = client.post(
-        "/api/internal/whitelist-check",
-        json={"email": "admin@gov.taipei"},
-        headers={"X-Internal-Token": "wrong"},
-    )
-    assert res.status_code == 401
-
-    # Correct token -> boolean answer only
-    res = client.post(
-        "/api/internal/whitelist-check",
-        json={"email": "admin@gov.taipei"},
-        headers={"X-Internal-Token": "s3cret"},
-    )
-    assert res.status_code == 200
-    assert res.json() == {"allowed": True}
-
-    res = client.post(
-        "/api/internal/whitelist-check",
-        json={"email": "outsider@example.com"},
-        headers={"X-Internal-Token": "s3cret"},
-    )
-    assert res.json() == {"allowed": False}
-
-
-def test_internal_endpoint_disabled_without_configured_token(client: TestClient):
+def test_retired_internal_whitelist_endpoint_is_gone(client: TestClient):
     res = client.post(
         "/api/internal/whitelist-check",
         json={"email": "admin@gov.taipei"},
         headers={"X-Internal-Token": "anything"},
     )
-    assert res.status_code == 404
+    assert res.status_code in (404, 405)

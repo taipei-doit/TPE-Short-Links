@@ -255,33 +255,26 @@ Firebase provides the exact values in the console.
 
 ---
 
-## Part 6: Firebase Functions (Admin magic link)
+## Part 6: Admin login email
 
-The admin login email is sent by a callable Firebase Function: `sendAdminLoginLink` (source: `functions/index.js`).
+The backend sends the magic link itself (`POST /api/auth/login-link`); there is
+no Cloud Function any more. Only whitelisted admins (`admin_users` table) get
+mail, at most one per address per `LOGIN_LINK_COOLDOWN_SECONDS`.
 
-### 6.1 Configure function environment
+Routes, tried in order until one succeeds:
 
-Set these once per project:
+1. **City mail relay** for `RELAY_DOMAINS` (default `gov.taipei`): needs
+   `RELAY_URL`, `RELAY_TOKEN`, `RELAY_CA_PEM`, and the service's fixed egress IP
+   on the relay's allow list.
+2. **SMTP** (Gmail app password): `SMTP_USER`, `SMTP_PASS`, optional
+   `SMTP_FROM` / `SMTP_HOST` / `SMTP_PORT`. Used for other domains and whenever
+   the relay fails.
+3. **Firebase Auth's own email** (its template and mail servers, no extra
+   setting): last resort when both of the above fail, so admins can always sign
+   in. Edit its wording/language under Authentication → Templates → Email link.
 
-```bash
-# Whitelisted admin emails (comma-separated)
-firebase functions:config:set admin.whitelist="admin@example.com,manager@example.com"
-
-# Where the magic link should open (must be an Authorized domain in Firebase Auth)
-firebase functions:config:set app.url="https://url.taipei"
-
-# SMTP credentials used to send email
-firebase functions:config:set smtp.user="your@gmail.com" smtp.pass="your-app-password" smtp.from="noreply@yourdomain.com"
-```
-
-### 6.2 Deploy functions
-
-```bash
-cd functions
-npm install
-cd ..
-firebase deploy --only functions
-```
+`LOGIN_CONTINUE_URL` is where the link opens and must be a Firebase Auth
+authorized domain.
 
 ---
 

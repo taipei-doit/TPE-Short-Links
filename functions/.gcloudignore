@@ -1,7 +1,0 @@
-# Only ignore these; .env is NOT listed so it gets deployed and dotenv can load it at runtime.
-# Keep functions/.env out of git (root .gitignore) but it will be in the deploy package when you run firebase deploy.
-node_modules/
-.git/
-.gitignore
-*.log
-.gcloudignore

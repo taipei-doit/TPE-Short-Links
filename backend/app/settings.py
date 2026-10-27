@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     #   for backend ID token verification.
     FIREBASE_PROJECT_ID: str = ""
     FIREBASE_APP_ID: str = ""
-    # Shared secret used by the old magic-link Cloud Function to ask this
-    # service whether an email is whitelisted (also seeds FILE_DOWNLOAD_SECRET).
-    # Empty disables the internal endpoint.
+    # Formerly the shared secret of the retired magic-link Cloud Function. Kept
+    # because it seeds FILE_DOWNLOAD_SECRET: removing or rotating it invalidates
+    # outstanding file download tokens.
     INTERNAL_API_TOKEN: str = ""
 
     # --- PIN-protected file sharing (/f/{code}) ---

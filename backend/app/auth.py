@@ -73,12 +73,7 @@ def invalidate_admin_cache(email: str | None = None) -> None:
         _admin_cache.pop(email, None)
 
 
-def generate_sign_in_link(email: str) -> str:
-    """Create a Firebase email sign-in (magic) link without sending it.
-
-    Same call firebase-admin's generateSignInWithEmailLink makes, done over REST
-    with this service's own credentials so the backend needs no Firebase SDK.
-    """
+def _send_oob_code(email: str, return_link: bool) -> dict[str, Any]:
     import google.auth
     from google.auth.transport.requests import AuthorizedSession
 
@@ -92,12 +87,30 @@ def generate_sign_in_link(email: str) -> str:
             "email": email,
             "continueUrl": settings.LOGIN_CONTINUE_URL,
             "canHandleCodeInApp": True,
-            "returnOobLink": True,
+            "returnOobLink": return_link,
         },
         timeout=15,
     )
     r.raise_for_status()
-    return r.json()["oobLink"]
+    return r.json()
+
+
+def generate_sign_in_link(email: str) -> str:
+    """Create a Firebase email sign-in (magic) link without sending it.
+
+    Same call firebase-admin's generateSignInWithEmailLink makes, done over REST
+    with this service's own credentials so the backend needs no Firebase SDK.
+    """
+    return _send_oob_code(email, return_link=True)["oobLink"]
+
+
+def send_sign_in_email_via_firebase(email: str) -> None:
+    """Have Firebase Auth email the sign-in link itself (its template, its servers).
+
+    Last-resort route for when both the city relay and SMTP fail: it shares no
+    credentials or mail servers with them.
+    """
+    _send_oob_code(email, return_link=False)
 
 
 def get_firebase_user(

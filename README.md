@@ -13,7 +13,7 @@
 | 管理介面 | React / Vite / Mantine | Firebase Hosting |
 | 資料庫 | PostgreSQL | Cloud SQL `tpe-shortlinks-db`（asia-east1） |
 | 分享檔案儲存 | Cloud Storage | 私有儲存桶（`FILE_STORAGE_BUCKET`），僅後端以服務帳號存取 |
-| 登入寄信 | Firebase Functions | `sendAdminLoginLink` 等（`functions/index.js`） |
+| 登入寄信 | 後端 `POST /api/auth/login-link` | 市府寄信中繼 → Gmail SMTP → Firebase Auth 自寄，三層備援（`backend/app/mailer.py`） |
 
 ## 功能與規則
 
@@ -211,7 +211,7 @@ Cloud Scheduler `purge-expired-files-daily` 每日 03:00 觸發，預設過期�
 
 ## 相關文件
 
-- [`DEPLOYMENT.md`](DEPLOYMENT.md) — 完整部署與初始建置指南（Cloud SQL、網域、Functions 設定）
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — 完整部署與初始建置指南（Cloud SQL、網域、登入寄信設定）
 - [`STATUS_EXPLANATION.md`](STATUS_EXPLANATION.md) — 短網址狀態（使用中／過期／停用）與轉址行為說明
 - [`AUTH_SETUP.md`](AUTH_SETUP.md) — 管理員魔術連結登入設定
 - [`TAGS_AND_WORDS.md`](TAGS_AND_WORDS.md) — 標籤與封鎖字詞維護說明

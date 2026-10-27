@@ -50,78 +50,22 @@ FIREBASE_APP_ID=1:123456789:web:abcdef
 
 ---
 
-## 4. Cloud Function: admin whitelist and email
+## 4. Login email (backend)
 
-The callable function `sendAdminLoginLink`:
-
-1. Checks the given email against an **admin whitelist**.
-2. Generates a Firebase Auth sign-in link.
-3. Sends the link by email via **SMTP**.
-
-### 4.1 Admin whitelist
-
-Set a comma-separated list of allowed admin emails:
-
-```bash
-firebase functions:config:set admin.whitelist="admin@example.com,manager@example.com"
-```
-
-Or with Firebase Functions env (Node 18+):
-
-```bash
-# In functions/.env (do not commit)
-ADMIN_WHITELIST=admin@example.com,manager@example.com
-```
-
-### 4.2 App URL (where the magic link opens)
-
-```bash
-firebase functions:config:set app.url="https://url.taipei"
-```
-
-Or in `functions/.env`: `APP_URL=https://url.taipei`
-
-### 4.3 SMTP (sending the email)
-
-Configure your SMTP provider (e.g. Gmail with an app password):
-
-```bash
-firebase functions:config:set smtp.user="your@gmail.com" smtp.pass="your-app-password" smtp.from="noreply@yourdomain.com"
-```
-
-Optional: `smtp.host` (default `smtp.gmail.com`), `smtp.port` (default `587`).
-
-Or in `functions/.env`:
-
-```env
-SMTP_USER=your@gmail.com
-SMTP_PASS=your-app-password
-SMTP_FROM=noreply@yourdomain.com
-```
-
-### 4.4 Admin list (Firestore + UI)
-
-Admin emails can be managed from the app’s **Admins** page (nav: Admins). The list is stored in **Firestore** (collection `admin_emails`).
-
-- **Firestore:** In Firebase Console → Build → Firestore Database, create a database if you don’t have one (e.g. start in production mode; you can restrict rules later).
-- **Initial list:** If the collection is empty, the function still uses the env whitelist (`ADMIN_WHITELIST`). The first time someone requests a magic link (and is allowed), the full env list is copied into Firestore; after that, only Firestore is used.
-- **Add/remove:** Signed-in admins can add or remove emails on the Admins page. You cannot remove yourself or the last admin.
+`POST /api/auth/login-link` checks the email against the admin whitelist
+(PostgreSQL `admin_users`, managed on the **Admins** page; `ADMIN_WHITELIST`
+env only bootstraps an empty table), creates the Firebase sign-in link, and
+mails it. Delivery falls through three independent routes: city mail relay →
+SMTP → Firebase Auth's own template email. Settings are listed in
+[`DEPLOYMENT.md`](DEPLOYMENT.md) Part 6.
 
 ---
 
 ## 5. Deploy
 
-1. **Install and deploy Cloud Functions**
-   ```bash
-   cd functions
-   npm install
-   cd ..
-   firebase deploy --only functions
-   ```
+1. **Backend:** Set `FIREBASE_APP_ID` and the mail settings in production env and redeploy (Cloud Run).
 
-2. **Backend:** Set `FIREBASE_APP_ID` in production env and redeploy (e.g. Cloud Run).
-
-3. **Frontend:** Set the Firebase env vars, build, then:
+2. **Frontend:** Set the Firebase env vars, build, then:
    ```bash
    firebase deploy --only hosting
    ```
@@ -132,7 +76,7 @@ Admin emails can be managed from the app’s **Admins** page (nav: Admins). The 
 
 - User opens the app → if not signed in, they are sent to **/login**.
 - On **/login**, they enter their email and click “Send login link”.
-- Frontend calls the callable **sendAdminLoginLink**; the function checks the whitelist, generates the link, and sends the email.
+- Frontend calls **`POST /api/auth/login-link`**; the backend checks the whitelist, generates the link, and sends the email (relay → SMTP → Firebase fallback).
 - User clicks the link in the email → they land on your app → Firebase completes sign-in (`signInWithEmailLink`).
 - After sign-in, the frontend sends the Firebase ID token in `Authorization: Bearer <token>` on every API request.
 - Backend (when `FIREBASE_APP_ID` is set) verifies the token with `google.oauth2.id_token.verify_firebase_token` and rejects unauthenticated requests with 401.

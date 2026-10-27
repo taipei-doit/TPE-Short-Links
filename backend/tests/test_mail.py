@@ -62,6 +62,7 @@ def login_env(monkeypatch):
     monkeypatch.setattr(main_module, "is_admin_email", lambda e: e == "admin@gov.taipei")
     monkeypatch.setattr(main_module, "generate_sign_in_link", lambda e: "https://x/?oob=1&a=2")
     monkeypatch.setattr(main_module, "send_mail", lambda to, subject, html: sent.append((to, html)))
+    monkeypatch.setattr(main_module, "send_sign_in_email_via_firebase", lambda e: sent.append((e, "firebase")))
     main_module._login_link_sent.clear()
     return sent
 
@@ -85,11 +86,30 @@ def test_login_link_cooldown(client: TestClient, login_env):
     assert len(login_env) == 1
 
 
+def test_login_link_falls_back_to_firebase_when_mail_routes_fail(client: TestClient, login_env, monkeypatch):
+    def boom(*_):
+        raise mailer.MailError("relay and smtp down")
+
+    monkeypatch.setattr(main_module, "send_mail", boom)
+    assert client.post("/api/auth/login-link", json={"email": "admin@gov.taipei"}).status_code == 200
+    assert login_env == [("admin@gov.taipei", "firebase")]
+
+
+def test_login_link_falls_back_to_firebase_when_link_generation_fails(client: TestClient, login_env, monkeypatch):
+    def boom(_):
+        raise RuntimeError("identity toolkit hiccup")
+
+    monkeypatch.setattr(main_module, "generate_sign_in_link", boom)
+    assert client.post("/api/auth/login-link", json={"email": "admin@gov.taipei"}).status_code == 200
+    assert login_env == [("admin@gov.taipei", "firebase")]
+
+
 def test_login_link_send_failure_is_502_and_retryable(client: TestClient, login_env, monkeypatch):
     def boom(*_):
         raise mailer.MailError("down")
 
     monkeypatch.setattr(main_module, "send_mail", boom)
+    monkeypatch.setattr(main_module, "send_sign_in_email_via_firebase", boom)
     assert client.post("/api/auth/login-link", json={"email": "admin@gov.taipei"}).status_code == 502
     # A failed send must not start the cooldown.
     assert main_module._login_link_sent == {}

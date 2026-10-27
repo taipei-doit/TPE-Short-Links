@@ -59,6 +59,18 @@ const PIN_LENGTH = 8;
  */
 const MAX_FILE_MB = 2048;
 
+/**
+ * The table needs ~1080px; on narrower windows it scrolls sideways, which used
+ * to hide the actions column off the right edge. Pin it there instead.
+ */
+const STICKY_ACTIONS: React.CSSProperties = {
+  position: 'sticky',
+  right: 0,
+  zIndex: 1,
+  background: 'var(--mantine-color-body)',
+  boxShadow: 'inset 1px 0 0 var(--mantine-color-gray-3)',
+};
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB'];
@@ -741,7 +753,7 @@ export function FilesPage() {
                 <Table.Th style={{ width: '140px', fontWeight: 600 }}>有效期限</Table.Th>
                 <Table.Th style={{ width: '100px', fontWeight: 600 }}>狀態</Table.Th>
                 <Table.Th style={{ width: '90px', fontWeight: 600 }}>下載次數</Table.Th>
-                <Table.Th style={{ width: '180px' }}>操作</Table.Th>
+                <Table.Th style={{ ...STICKY_ACTIONS, width: '230px' }}>操作</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -845,7 +857,7 @@ export function FilesPage() {
                             {share.download_count.toLocaleString()}
                           </Text>
                         </Table.Td>
-                        <Table.Td>
+                        <Table.Td style={STICKY_ACTIONS}>
                           {share.status === 'deleted' ? (
                             <Text size="xs" c="dimmed">
                               —
@@ -953,6 +965,20 @@ export function FilesPage() {
                               ) : (
                                 liveFiles.map((f, index) => (
                                   <Group key={f.id} gap="sm" wrap="nowrap">
+                                    {/* Left side, so it stays visible when the wide table is scrolled. */}
+                                    {share.status !== 'deleted' && (
+                                      <Tooltip label="從分享中移除" withArrow>
+                                        <ActionIcon
+                                          variant="subtle"
+                                          color="red"
+                                          size="sm"
+                                          aria-label="從分享中移除"
+                                          onClick={() => confirmDeleteFile(share, f.id, f.filename)}
+                                        >
+                                          <IconTrash size={16} />
+                                        </ActionIcon>
+                                      </Tooltip>
+                                    )}
                                     {share.status !== 'deleted' && liveFiles.length > 1 && (
                                       <Group gap={2} wrap="nowrap">
                                         <ActionIcon
@@ -989,19 +1015,6 @@ export function FilesPage() {
                                     <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                                       下載 {f.download_count} 次
                                     </Text>
-                                    {share.status !== 'deleted' && (
-                                      <Tooltip label="從分享中移除" withArrow>
-                                        <ActionIcon
-                                          variant="subtle"
-                                          color="red"
-                                          size="sm"
-                                          aria-label="從分享中移除"
-                                          onClick={() => confirmDeleteFile(share, f.id, f.filename)}
-                                        >
-                                          <IconTrash size={16} />
-                                        </ActionIcon>
-                                      </Tooltip>
-                                    )}
                                   </Group>
                                 ))
                               )}
