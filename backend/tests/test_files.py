@@ -612,4 +612,5 @@ def test_landing_page_ships_every_translation(files_client):
     # Switching language must not need a round trip, so all four are embedded.
     for heading in ("檔案下載", "File Download", "ファイルのダウンロード", "파일 다운로드"):
         assert heading in r.text
-    assert r.headers["vary"] == "Accept-Language"
+    # Starlette's CORS middleware also appends "Origin" (since 1.8).
+    assert "Accept-Language" in [v.strip() for v in r.headers["vary"].split(",")]

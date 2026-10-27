@@ -5,8 +5,12 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# constraints.txt pins every transitive version so a rebuild never pulls a
+# release published the same day (supply-chain cooldown). Regenerate with:
+#   uv pip compile requirements.txt --exclude-newer <today-14d> --python-version 3.13 \
+#     --python-platform x86_64-manylinux_2_28 --no-header --annotation-style line -o constraints.txt
+COPY requirements.txt constraints.txt /app/
+RUN pip install --no-cache-dir -r /app/requirements.txt -c /app/constraints.txt
 
 COPY app /app/app
 
